@@ -55,6 +55,15 @@ export async function middleware(request: NextRequest) {
 // api/sync/* tiene su propia auth por Bearer token (SYNC_CRON_SECRET,
 // ver lib/sync-auth.ts) — lo llama GitHub Actions sin sesión de
 // navegador, así que no debe pasar por la verificación de sesión de acá.
+//
+// El ".*\\..*" al final excluye cualquier ruta con extensión de archivo
+// (archivos estáticos servidos desde /public: verificaciones de dominio
+// tipo tiktok*.txt, sitemap.xml, etc.) — sin esto, cada archivo estático
+// nuevo queda bloqueado por la sesión igual que /api/sync y /terms antes,
+// y un visitante/bot sin sesión recibe un redirect a /login en vez del
+// archivo. No hace falta seguir agregando rutas una por una a mano.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/auth/callback|api/sync).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|api/auth/callback|api/sync|.*\\..*).*)",
+  ],
 };
