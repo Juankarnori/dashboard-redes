@@ -51,6 +51,9 @@ export interface Database {
           display_name: string | null;
           profile_image_url: string | null;
           access_token: string;
+          // Solo TikTok (por ahora): el access token expira a las 24h y se
+          // refresca activamente con esto. Meta lo deja en null.
+          refresh_token: string | null;
           token_expires_at: string | null;
           parent_account_id: string | null;
           meta: Record<string, unknown>;
@@ -67,6 +70,7 @@ export interface Database {
           display_name?: string | null;
           profile_image_url?: string | null;
           access_token: string;
+          refresh_token?: string | null;
           token_expires_at?: string | null;
           parent_account_id?: string | null;
           meta?: Record<string, unknown>;
