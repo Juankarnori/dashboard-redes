@@ -1,26 +1,140 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+  Design system — "Signal"
+  ------------------------
+  Concept: this dashboard reads live signal off two businesses' social
+  accounts. Neutrals are a warm stone (paper, not cream-and-serif cliché).
+  Numbers are always set in mono (IBM Plex Mono) — words are always sans
+  (IBM Plex Sans). That split is a rule, not a decoration: if it's a
+  measured value, it's mono, everywhere in the product.
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  Accent = deep teal (chrome: buttons, links, active nav, focus rings).
+  Amber is reserved for the live-sync pulse only ("on-air" tally light).
+  Green/coral are reserved for growth/decline deltas only.
+*/
+
+:root {
+  --surface-0: #f6f6f2;
+  --surface-1: #ffffff;
+  --surface-2: #ececE5;
+  --border: #deded4;
+
+  --ink-900: #191a16;
+  --ink-600: #5b5c52;
+  --ink-400: #93948a;
+
+  --accent: #12615f;
+  --accent-strong: #0c4a48;
+  --accent-soft: #e4f0ee;
+
+  --live: #e8850c;
+  --live-soft: #fbe8d1;
+
+  --positive: #3f7d4f;
+  --positive-soft: #e3efe3;
+  --negative: #c1432e;
+  --negative-soft: #f7e5e1;
+
+  --radius-card: 0.7rem;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --surface-0: #17181a;
+    --surface-1: #1f2123;
+    --surface-2: #292b2e;
+    --border: #34363a;
+
+    --ink-900: #f3f3ef;
+    --ink-600: #b7b8b0;
+    --ink-400: #7c7d76;
+
+    --accent: #3fb8b3;
+    --accent-strong: #6fd4cf;
+    --accent-soft: #16302e;
+
+    --live: #f2a93b;
+    --live-soft: #3a2c14;
+
+    --positive: #5fae71;
+    --positive-soft: #1c3020;
+    --negative: #e26650;
+    --negative-soft: #38201c;
   }
 }
 
+@theme inline {
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+
+  --color-ink-900: var(--ink-900);
+  --color-ink-600: var(--ink-600);
+  --color-ink-400: var(--ink-400);
+
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+
+  --color-live: var(--live);
+  --color-live-soft: var(--live-soft);
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-negative: var(--negative);
+  --color-negative-soft: var(--negative-soft);
+
+  --font-sans: var(--font-plex-sans);
+  --font-mono: var(--font-plex-mono);
+
+  --radius-card: var(--radius-card);
+}
+
+* {
+  border-color: var(--border);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--surface-0);
+  color: var(--ink-900);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Numeric readouts always use the mono face — see design system note above. */
+.tabular {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--live) 0%, transparent);
+  }
+}
+
+.pulse-dot {
+  position: relative;
+}
+
+.pulse-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

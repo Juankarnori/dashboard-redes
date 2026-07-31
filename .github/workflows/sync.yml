@@ -1,0 +1,55 @@
+name: sync-metrics
+
+on:
+  schedule:
+    # Sync completo (posts, reels, audiencia): cada 4h.
+    # Vercel Hobby limita el cron nativo a 1x/día, por eso usamos GH Actions.
+    - cron: "0 */4 * * *"
+    # Historias: cada hora, porque expiran a las 24h y una corrida cada
+    # 4h se las puede perder si se publican y borran entre medio.
+    - cron: "15 * * * *"
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "all | stories"
+        default: "all"
+        required: false
+
+env:
+  APP_URL: ${{ secrets.APP_URL }} # ej. https://tu-dominio.vercel.app
+  SYNC_CRON_SECRET: ${{ secrets.SYNC_CRON_SECRET }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determinar scope según el cron que disparó el job
+        id: scope
+        run: |
+          if [ "${{ github.event.schedule }}" = "15 * * * *" ]; then
+            echo "value=stories" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.inputs.scope }}" ]; then
+            echo "value=${{ github.event.inputs.scope }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=all" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Listar cuentas activas
+        id: accounts
+        run: |
+          response=$(curl -sf -H "Authorization: Bearer $SYNC_CRON_SECRET" \
+            "$APP_URL/api/sync/accounts")
+          echo "$response" | jq -c '.accounts[].id' > account_ids.txt
+          cat account_ids.txt
+
+      - name: Sincronizar cada cuenta (una llamada por cuenta)
+        run: |
+          scope="${{ steps.scope.outputs.value }}"
+          while read -r id; do
+            id=$(echo "$id" | tr -d '"')
+            echo "Sync $id (scope=$scope)"
+            curl -sf -X POST \
+              -H "Authorization: Bearer $SYNC_CRON_SECRET" \
+              "$APP_URL/api/sync?account_id=$id&scope=$scope" \
+              || echo "::warning::Falló el sync de $id"
+          done < account_ids.txt
