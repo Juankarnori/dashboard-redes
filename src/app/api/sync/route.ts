@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAuthorizedSyncRequest } from "@/lib/sync-auth";
-import { decryptToken } from "@/lib/crypto";
+import { decryptToken, encryptToken } from "@/lib/crypto";
 import { getProvider } from "@/lib/platforms";
 import { recomputeAccountAlerts } from "@/lib/analytics/alerts";
 import { syncCommentsForAccount } from "@/lib/analytics/comments-sync";
@@ -62,7 +62,51 @@ export async function POST(request: NextRequest) {
   try {
     const provider = getProvider(account.platform);
     const accessToken = decryptToken(account.access_token);
-    const providerAccount = { id: account.id, externalId: account.external_id, accessToken };
+    const refreshToken = account.refresh_token ? decryptToken(account.refresh_token) : undefined;
+    const providerAccount = {
+      id: account.id,
+      externalId: account.external_id,
+      accessToken,
+      refreshToken,
+      tokenExpiresAt: account.token_expires_at,
+    };
+
+    // Refresh de token (solo redes con tokens de corta duración, ej.
+    // TikTok — ver PlatformProvider.refreshTokenIfNeeded). Se hace antes
+    // de cualquier llamada a la API para no arrancar el sync con un
+    // token que sabemos vencido.
+    if (provider.refreshTokenIfNeeded) {
+      try {
+        const refreshed = await provider.refreshTokenIfNeeded(providerAccount);
+        if (refreshed) {
+          // Update único con los tres campos juntos: la fila se actualiza
+          // de forma atómica, nunca queda un access_token nuevo con el
+          // refresh_token viejo (o viceversa) a medio camino.
+          const { error: refreshSaveError } = await supabase
+            .from("accounts")
+            .update({
+              access_token: encryptToken(refreshed.accessToken),
+              refresh_token: encryptToken(refreshed.refreshToken),
+              token_expires_at: refreshed.expiresAt,
+            })
+            .eq("id", account.id);
+
+          if (refreshSaveError) {
+            throw new Error(`Token refrescado pero no se pudo guardar: ${refreshSaveError.message}`);
+          }
+
+          providerAccount.accessToken = refreshed.accessToken;
+          providerAccount.refreshToken = refreshed.refreshToken;
+          providerAccount.tokenExpiresAt = refreshed.expiresAt;
+        }
+      } catch (err) {
+        // Nunca fallar en silencio: se loguea acá con marca explícita de
+        // "refresh" (para diferenciarlo de un error de fetch de contenido)
+        // y se relanza para que el catch de abajo lo registre en sync_logs.
+        console.error(`[token-refresh] Falló el refresh de token (${account.platform}) para cuenta ${account.id}:`, err);
+        throw err;
+      }
+    }
 
     if (scope === "comments") {
       const synced = await syncCommentsForAccount(supabase, provider, providerAccount, account.id);

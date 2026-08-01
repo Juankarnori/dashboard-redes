@@ -7,6 +7,7 @@ import type { Platform } from "@/types/db";
 const PLATFORMS: { value: Platform; label: string }[] = [
   { value: "instagram", label: "Instagram" },
   { value: "facebook", label: "Facebook" },
+  { value: "tiktok", label: "TikTok" },
 ];
 
 export function FilterBar({ brands }: { brands: { id: string; name: string; color: string }[] }) {

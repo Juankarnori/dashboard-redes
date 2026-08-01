@@ -32,6 +32,21 @@ export interface PlatformProvider {
 
   /** Publica una respuesta a un comentario. Devuelve el id del comentario de respuesta creado. */
   postCommentReply?(commentExternalId: string, message: string, account: ProviderAccount): Promise<string>;
+
+  /**
+   * Si el access_token está vencido o por vencer, lo refresca y devuelve
+   * el par nuevo (+ nueva expiración). Devuelve null si no hacía falta.
+   * Opcional: solo lo implementan redes con tokens de corta duración y
+   * refresh_token propio (TikTok). Los Page Access Token de Meta son de
+   * larga duración y no tienen este mecanismo.
+   */
+  refreshTokenIfNeeded?(account: ProviderAccount): Promise<RefreshedToken | null>;
+}
+
+export interface RefreshedToken {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string; // ISO
 }
 
 export interface ProviderComment {
@@ -49,6 +64,8 @@ export interface ProviderAccount {
   id: string;
   externalId: string;
   accessToken: string; // ya descifrado por el llamador
+  refreshToken?: string; // ya descifrado por el llamador — solo redes con refresh (TikTok)
+  tokenExpiresAt?: string | null;
 }
 
 export interface ProviderContentItem {

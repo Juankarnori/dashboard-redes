@@ -63,3 +63,74 @@ export async function fetchTikTokUserInfo(accessToken: string): Promise<TikTokUs
   }
   return json.data.user;
 }
+
+export interface TikTokVideo {
+  id: string;
+  title?: string;
+  video_description?: string;
+  duration?: number;
+  cover_image_url?: string;
+  share_url?: string;
+  create_time?: number; // epoch, segundos
+  view_count?: number;
+  like_count?: number;
+  comment_count?: number;
+  share_count?: number;
+}
+
+interface TikTokVideoListResponse {
+  data?: { videos: TikTokVideo[]; cursor?: number; has_more?: boolean };
+  error?: TikTokApiError;
+}
+
+const VIDEO_FIELDS = [
+  "id",
+  "title",
+  "video_description",
+  "duration",
+  "cover_image_url",
+  "share_url",
+  "create_time",
+  "view_count",
+  "like_count",
+  "comment_count",
+  "share_count",
+].join(",");
+
+/**
+ * Videos del usuario (scope video.list). A diferencia de user/info, este
+ * endpoint es POST con el cursor en el body (paginación por cursor
+ * numérico, no por URL de "next" como Meta). Best-effort: si falla a
+ * mitad de la paginación, devuelve lo que haya traído hasta ahí.
+ */
+export async function fetchTikTokVideos(accessToken: string): Promise<TikTokVideo[]> {
+  const videos: TikTokVideo[] = [];
+  let cursor = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const url = `${TIKTOK_API_BASE}/video/list/?fields=${VIDEO_FIELDS}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ max_count: 20, cursor }),
+    });
+    const json: TikTokVideoListResponse = await res.json();
+
+    if (!res.ok || (json.error && json.error.code !== "ok")) {
+      console.warn(`TikTok video/list falló: ${res.status} ${JSON.stringify(json.error)}`);
+      return videos;
+    }
+    const data = json.data;
+    if (!data || data.videos.length === 0) break;
+
+    videos.push(...data.videos);
+    hasMore = !!data.has_more;
+    cursor = data.cursor ?? cursor + data.videos.length;
+  }
+
+  return videos;
+}
