@@ -250,3 +250,74 @@ export async function getContentComments(supabase: DB, contentId: string) {
 
   return data ?? [];
 }
+
+export interface CommentInboxItem {
+  id: string;
+  author_name: string | null;
+  text: string;
+  commented_at: string | null;
+  replied: boolean;
+  content: {
+    id: string;
+    thumbnail_url: string | null;
+    permalink: string | null;
+    caption: string | null;
+  };
+  platform: Platform;
+  account_label: string;
+  brand: { name: string; color: string } | null;
+}
+
+/**
+ * Comentarios de terceros (sin nuestras propias respuestas, sin hijos de
+ * hilo) de todas las cuentas que pasan `filters`, más reciente primero.
+ * El split Pendientes/Todos (por `replied`) se hace en el cliente sobre
+ * este mismo array — ver CommentInbox.tsx.
+ */
+export async function getCommentsInbox(supabase: DB, filters: OverviewFilters): Promise<CommentInboxItem[]> {
+  const accounts = await getFilteredAccounts(supabase, filters);
+  if (accounts.length === 0) return [];
+
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+
+  const { data } = await supabase
+    .from("comments")
+    .select("id, author_name, text, commented_at, replied, content:content_id(id, thumbnail_url, permalink, caption, account_id)")
+    .is("parent_comment_id", null)
+    .eq("is_business_reply", false)
+    .order("commented_at", { ascending: false });
+
+  const rows = (data ?? []) as unknown as {
+    id: string;
+    author_name: string | null;
+    text: string;
+    commented_at: string | null;
+    replied: boolean;
+    content: { id: string; thumbnail_url: string | null; permalink: string | null; caption: string | null; account_id: string };
+  }[];
+
+  const inbox: CommentInboxItem[] = [];
+  for (const row of rows) {
+    const account = accountById.get(row.content.account_id);
+    if (!account) continue; // fuera del filtro de negocio/plataforma, o inactiva
+
+    inbox.push({
+      id: row.id,
+      author_name: row.author_name,
+      text: row.text,
+      commented_at: row.commented_at,
+      replied: row.replied,
+      content: {
+        id: row.content.id,
+        thumbnail_url: row.content.thumbnail_url,
+        permalink: row.content.permalink,
+        caption: row.content.caption,
+      },
+      platform: account.platform,
+      account_label: account.display_name ?? account.username ?? account.platform,
+      brand: (account as unknown as { brands: { name: string; color: string } | null }).brands,
+    });
+  }
+
+  return inbox;
+}

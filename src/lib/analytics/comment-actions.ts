@@ -9,7 +9,12 @@ export interface ReplyToCommentResult {
   error?: string;
 }
 
-/** Publica una respuesta a un comentario en Meta y la guarda como hilo local. */
+/**
+ * Publica una respuesta a un comentario en Meta y la guarda como hilo
+ * local. Compartida entre el detalle de contenido (/content/[id]) y la
+ * bandeja centralizada (/comments) — una sola fuente de verdad para el
+ * flujo de "responder".
+ */
 export async function replyToComment(commentId: string, message: string): Promise<ReplyToCommentResult> {
   const trimmed = message.trim();
   if (!trimmed) return { error: "Escribí una respuesta." };
@@ -67,5 +72,6 @@ export async function replyToComment(commentId: string, message: string): Promis
   }
 
   revalidatePath(`/content/${comment.content_id}`);
+  revalidatePath("/comments");
   return {};
 }
