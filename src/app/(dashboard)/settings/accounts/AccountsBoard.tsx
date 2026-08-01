@@ -51,12 +51,20 @@ export function AccountsBoard({ brands }: { brands: BrandWithAccounts[] }) {
               />
               <h2 className="text-sm font-semibold text-ink-900">{brand.name}</h2>
             </div>
-            <a
-              href={`/api/auth/meta/start?brand_id=${brand.id}`}
-              className="inline-flex h-8 items-center justify-center rounded-[0.5rem] border border-border bg-surface-0 px-3 text-xs font-medium text-ink-900 transition-colors hover:bg-surface-2"
-            >
-              Conectar con Meta
-            </a>
+            <div className="flex items-center gap-2">
+              <a
+                href={`/api/auth/meta/start?brand_id=${brand.id}`}
+                className="inline-flex h-8 items-center justify-center rounded-[0.5rem] border border-border bg-surface-0 px-3 text-xs font-medium text-ink-900 transition-colors hover:bg-surface-2"
+              >
+                Conectar con Meta
+              </a>
+              <a
+                href={`/api/auth/tiktok/start?brand_id=${brand.id}`}
+                className="inline-flex h-8 items-center justify-center rounded-[0.5rem] border border-border bg-surface-0 px-3 text-xs font-medium text-ink-900 transition-colors hover:bg-surface-2"
+              >
+                Conectar con TikTok
+              </a>
+            </div>
           </div>
 
           <div className="mt-4 flex flex-col gap-2">
