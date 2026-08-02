@@ -9,9 +9,32 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleString("es", { dateStyle: "medium", timeStyle: "short" });
 }
 
-export function CommentInboxRow({ comment, onReplied }: { comment: CommentInboxItem; onReplied: () => void }) {
+export function CommentInboxRow({
+  comment,
+  onReplied,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
+}: {
+  comment: CommentInboxItem;
+  onReplied: () => void;
+  /** Solo se pinta el checkbox en la pestaña Pendientes. */
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
+}) {
   return (
     <div className="flex gap-3 rounded-[--radius-card] border border-border bg-surface-1 p-4">
+      {selectable && (
+        <input
+          type="checkbox"
+          aria-label={`Seleccionar comentario de ${comment.author_name ?? "Usuario"}`}
+          checked={selected}
+          onChange={onToggleSelect}
+          className="mt-1 h-4 w-4 shrink-0 accent-accent"
+        />
+      )}
+
       <Link
         href={`/content/${comment.content.id}`}
         className="relative hidden h-16 w-16 shrink-0 overflow-hidden rounded-[0.5rem] bg-surface-2 sm:block"
