@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
  * su propia copia en estado local: editar uno nunca toca al otro.
  */
 export const REPLY_TEMPLATE =
-  "¡Gracias por tu comentario! 😊 Si querés más información o hacer tu pedido, escribinos por WhatsApp al +593 98 461 3243 y te ayudamos enseguida.";
+  "¡Gracias por tu comentario! 😊 Si quieres más información o hacer tu pedido, escríbenos por WhatsApp al +593 98 461 3243 y te ayudamos enseguida.";
 
 /** Formulario de "responder" compartido entre /content/[id] y /comments. */
 export function ReplyForm({
