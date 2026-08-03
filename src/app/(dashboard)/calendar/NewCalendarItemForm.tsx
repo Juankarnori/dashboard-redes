@@ -61,6 +61,7 @@ export function NewCalendarItemForm({
               <option value="">Sin definir</option>
               <option value="instagram">Instagram</option>
               <option value="facebook">Facebook</option>
+              <option value="tiktok">TikTok</option>
             </select>
           </div>
           {campaigns.length > 0 && (

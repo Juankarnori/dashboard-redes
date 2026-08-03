@@ -1,4 +1,4 @@
-import type { PlatformProvider, ProviderAccount, ProviderContentItem, ProviderComment } from "./types";
+import type { PlatformProvider, ProviderAccount, ProviderContentItem, ProviderComment, PublishInput, PublishResult } from "./types";
 import {
   fetchInstagramMedia,
   fetchInstagramStories,
@@ -8,6 +8,10 @@ import {
   checkEngagementEligibility,
   fetchInstagramComments,
   postInstagramCommentReply,
+  createInstagramContainer,
+  checkInstagramContainerStatus,
+  publishInstagramContainer,
+  fetchInstagramPermalink,
   type IgMedia,
   type IgComment,
 } from "@/lib/meta/instagram";
@@ -136,4 +140,34 @@ export const instagramProvider: PlatformProvider = {
   async postCommentReply(commentExternalId: string, message: string, account: ProviderAccount) {
     return postInstagramCommentReply(commentExternalId, message, account.accessToken);
   },
+
+  async publishContent(input: PublishInput, account: ProviderAccount): Promise<PublishResult> {
+    const { containerId } = await createInstagramContainer(account.externalId, account.accessToken, input);
+    return finishOrKeepProcessing(account.externalId, containerId, account.accessToken);
+  },
+
+  async checkPublishStatus(containerId: string, account: ProviderAccount): Promise<PublishResult> {
+    return finishOrKeepProcessing(account.externalId, containerId, account.accessToken);
+  },
 };
+
+/** Común a publishContent y checkPublishStatus: si Meta ya terminó de procesar, publica; si no, avisa que sigue en curso. */
+async function finishOrKeepProcessing(
+  igUserId: string,
+  containerId: string,
+  accessToken: string
+): Promise<PublishResult> {
+  const { status, error } = await checkInstagramContainerStatus(containerId, accessToken);
+
+  if (status === "ERROR" || status === "EXPIRED") {
+    throw new Error(`IG no pudo procesar el contenido (${status}): ${error ?? "sin detalle"}`);
+  }
+  if (status === "IN_PROGRESS") {
+    return { kind: "processing", containerId };
+  }
+
+  // FINISHED: recién ahora se puede llamar a /media_publish.
+  const { mediaId } = await publishInstagramContainer(igUserId, containerId, accessToken);
+  const permalink = await fetchInstagramPermalink(mediaId, accessToken);
+  return { kind: "published", externalId: mediaId, permalink };
+}

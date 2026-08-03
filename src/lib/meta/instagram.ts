@@ -212,6 +212,75 @@ export async function postInstagramCommentReply(
   return json.id;
 }
 
+export interface IgContainerCreated {
+  containerId: string;
+}
+
+/**
+ * Content Publishing API: paso 1 de 2. Crea el media container — Meta lo
+ * procesa de forma asíncrona (sobre todo video), así que este llamado
+ * solo arranca el proceso; hay que consultar su estado con
+ * `checkInstagramContainerStatus` antes de publicarlo.
+ */
+export async function createInstagramContainer(
+  igUserId: string,
+  token: string,
+  input: { mediaUrl: string; mediaType: "image" | "video"; caption: string }
+): Promise<IgContainerCreated> {
+  const params = new URLSearchParams({
+    caption: input.caption,
+    access_token: token,
+  });
+  // El campo cambia de nombre según el tipo — pedir el que no corresponde
+  // hace que Meta rechace la llamada completa.
+  params.set(input.mediaType === "video" ? "video_url" : "image_url", input.mediaUrl);
+
+  const url = `${GRAPH_BASE}/${igUserId}/media`;
+  const res = await fetch(url, { method: "POST", body: params });
+  if (!res.ok) throw new Error(`IG crear container falló: ${res.status} ${await res.text()}`);
+  const json: { id: string } = await res.json();
+  return { containerId: json.id };
+}
+
+export type IgContainerStatus = "IN_PROGRESS" | "FINISHED" | "ERROR" | "EXPIRED" | "PUBLISHED";
+
+/** Paso intermedio (solo relevante para video): estado del procesamiento del container. */
+export async function checkInstagramContainerStatus(
+  containerId: string,
+  token: string
+): Promise<{ status: IgContainerStatus; error?: string }> {
+  const url = `${GRAPH_BASE}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`IG estado de container falló: ${res.status} ${await res.text()}`);
+  const json: { status_code: IgContainerStatus; status?: string } = await res.json();
+  return { status: json.status_code, error: json.status };
+}
+
+/** Content Publishing API: paso 2 de 2. Publica un container ya en estado FINISHED. */
+export async function publishInstagramContainer(
+  igUserId: string,
+  containerId: string,
+  token: string
+): Promise<{ mediaId: string }> {
+  const url = `${GRAPH_BASE}/${igUserId}/media_publish`;
+  const res = await fetch(url, {
+    method: "POST",
+    body: new URLSearchParams({ creation_id: containerId, access_token: token }),
+  });
+  if (!res.ok) throw new Error(`IG publicar container falló: ${res.status} ${await res.text()}`);
+  const json: { id: string } = await res.json();
+  return { mediaId: json.id };
+}
+
+/** Permalink de un media ya publicado — Meta no lo devuelve en /media_publish, hay que pedirlo aparte. */
+export async function fetchInstagramPermalink(mediaId: string, token: string): Promise<string | undefined> {
+  const url = `${GRAPH_BASE}/${mediaId}?fields=permalink&access_token=${encodeURIComponent(token)}`;
+  const res = await fetch(url);
+  if (!res.ok) return undefined;
+  const json: { permalink?: string } = await res.json();
+  return json.permalink;
+}
+
 /** Demografía — best-effort: los nombres de esta métrica han cambiado varias veces. */
 export async function fetchInstagramDemographics(
   igUserId: string,

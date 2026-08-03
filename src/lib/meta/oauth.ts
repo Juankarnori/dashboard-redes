@@ -29,6 +29,9 @@ export const META_OAUTH_SCOPES = [
   "instagram_manage_comments",
   "pages_manage_engagement", // reaccionar/gestionar engagement (no alcanza para leer)
   "pages_read_user_content", // el que de verdad exige Meta para LEER comentarios de la Page
+  // Publicación desde /calendar (Fase 6).
+  "instagram_content_publish",
+  "pages_manage_posts",
 ].join(",");
 
 function getRedirectUri(): string {

@@ -56,11 +56,30 @@ export default async function CalendarPage({
     ? await supabase.from("campaigns").select("*").eq("brand_id", selectedBrandId).order("start_date")
     : { data: [] };
 
-  let items: { id: string; idea: string | null; platform: string | null; scheduled_for: string | null; campaign_id: string | null }[] = [];
+  const CALENDAR_ITEM_FIELDS =
+    "id, idea, platform, scheduled_for, campaign_id, account_id, caption, media_path, media_type, status, external_post_id, permalink, publish_error";
+
+  type CalendarItemRow = {
+    id: string;
+    idea: string | null;
+    platform: string | null;
+    scheduled_for: string | null;
+    campaign_id: string | null;
+    account_id: string | null;
+    caption: string | null;
+    media_path: string | null;
+    media_type: string | null;
+    status: string;
+    external_post_id: string | null;
+    permalink: string | null;
+    publish_error: string | null;
+  };
+
+  let items: CalendarItemRow[] = [];
   if (selectedBrandId) {
     let itemsQuery = supabase
       .from("content_calendar")
-      .select("id, idea, platform, scheduled_for, campaign_id")
+      .select(CALENDAR_ITEM_FIELDS)
       .eq("brand_id", selectedBrandId)
       .gte("scheduled_for", gridStart.toISOString())
       .lte("scheduled_for", gridEnd.toISOString());
@@ -71,6 +90,14 @@ export default async function CalendarPage({
     const { data } = await itemsQuery.order("scheduled_for", { ascending: true });
     items = data ?? [];
   }
+
+  const { data: accounts } = selectedBrandId
+    ? await supabase
+        .from("accounts")
+        .select("id, platform, role, display_name, username")
+        .eq("brand_id", selectedBrandId)
+        .eq("status", "active")
+    : { data: [] };
 
   const monthParam = format(monthStart, "yyyy-MM");
 
@@ -146,7 +173,13 @@ export default async function CalendarPage({
               )}
             </div>
 
-            <CalendarGrid days={days} items={items} campaigns={campaigns ?? []} />
+            <CalendarGrid
+              days={days}
+              items={items}
+              campaigns={campaigns ?? []}
+              accounts={accounts ?? []}
+              brandId={selectedBrandId}
+            />
           </>
         )}
       </div>

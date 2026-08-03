@@ -3,6 +3,7 @@
 import { useState, useTransition, type DragEvent } from "react";
 import { PlatformBadge } from "@/components/dashboard/PlatformBadge";
 import { rescheduleCalendarItem } from "./actions";
+import { CalendarItemPublishPanel, type AccountOption } from "./CalendarItemPublishPanel";
 import { cn } from "@/lib/utils";
 import type { Platform } from "@/types/db";
 
@@ -12,6 +13,14 @@ interface CalendarItem {
   platform: string | null;
   scheduled_for: string | null;
   campaign_id: string | null;
+  account_id: string | null;
+  caption: string | null;
+  media_path: string | null;
+  media_type: string | null;
+  status: string;
+  external_post_id: string | null;
+  permalink: string | null;
+  publish_error: string | null;
 }
 
 interface DayCell {
@@ -22,19 +31,31 @@ interface DayCell {
 
 const WEEKDAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
+const STATUS_LABELS: Record<string, string> = {
+  publishing: "Publicando…",
+  published: "Publicado",
+  draft_sent: "En TikTok (borrador)",
+  failed: "Falló",
+};
+
 export function CalendarGrid({
   days,
   items,
   campaigns,
+  accounts,
+  brandId,
 }: {
   days: DayCell[];
   items: CalendarItem[];
   campaigns: { id: string; name: string; color: string }[];
+  accounts: AccountOption[];
+  brandId: string;
 }) {
   const [, startTransition] = useTransition();
   const [movingId, setMovingId] = useState<string | null>(null);
   const [errorsById, setErrorsById] = useState<Record<string, string>>({});
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  const [openItem, setOpenItem] = useState<CalendarItem | null>(null);
 
   const campaignById = new Map(campaigns.map((c) => [c.id, c]));
 
@@ -130,6 +151,20 @@ export function CalendarGrid({
                         </div>
                         <p className="line-clamp-2 text-ink-900">{item.idea}</p>
 
+                        {STATUS_LABELS[item.status] && (
+                          <span
+                            className={cn(
+                              "w-fit rounded-full px-1.5 py-0.5 text-[0.65rem] font-medium",
+                              item.status === "published" && "bg-positive-soft text-positive",
+                              item.status === "failed" && "bg-negative-soft text-negative",
+                              (item.status === "publishing" || item.status === "draft_sent") &&
+                                "bg-accent-soft text-accent-strong"
+                            )}
+                          >
+                            {STATUS_LABELS[item.status]}
+                          </span>
+                        )}
+
                         {errorsById[item.id] && <p className="text-negative">{errorsById[item.id]}</p>}
 
                         {/* Respaldo para touch/mobile: el drag-and-drop nativo de HTML5
@@ -142,6 +177,14 @@ export function CalendarGrid({
                           onChange={(e) => e.target.value && reschedule(item.id, e.target.value)}
                           className="w-full rounded-[0.35rem] border border-border bg-surface-1 px-1 py-0.5 text-[0.7rem] text-ink-600 disabled:opacity-50"
                         />
+
+                        <button
+                          type="button"
+                          onClick={() => setOpenItem(item)}
+                          className="w-full rounded-[0.35rem] border border-border bg-surface-1 px-1 py-0.5 text-[0.7rem] font-medium text-accent hover:bg-surface-2"
+                        >
+                          Publicar
+                        </button>
                       </div>
                     );
                   })}
@@ -151,6 +194,15 @@ export function CalendarGrid({
           </div>
         </div>
       </div>
+
+      {openItem && (
+        <CalendarItemPublishPanel
+          item={openItem}
+          accounts={accounts}
+          brandId={brandId}
+          onClose={() => setOpenItem(null)}
+        />
+      )}
     </div>
   );
 }

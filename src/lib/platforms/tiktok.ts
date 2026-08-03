@@ -1,5 +1,5 @@
-import type { PlatformProvider, ProviderAccount, ProviderContentItem, RefreshedToken } from "./types";
-import { fetchTikTokUserInfo, fetchTikTokVideos, type TikTokVideo } from "@/lib/tiktok/api";
+import type { PlatformProvider, ProviderAccount, ProviderContentItem, PublishInput, PublishResult, RefreshedToken } from "./types";
+import { fetchTikTokUserInfo, fetchTikTokVideos, uploadTikTokVideoToInbox, type TikTokVideo } from "@/lib/tiktok/api";
 import { refreshTikTokToken } from "@/lib/tiktok/oauth";
 
 // Refresca si falta menos de esto para vencer (o si ya venció).
@@ -72,5 +72,16 @@ export const tiktokProvider: PlatformProvider = {
       refreshToken: token.refresh_token,
       expiresAt: new Date(Date.now() + token.expires_in * 1000).toISOString(),
     };
+  },
+
+  // Modo Draft (video.upload): TikTok no publica nada por sí solo, solo
+  // entrega el archivo al inbox del creador — por eso `caption` no se
+  // usa acá (el título/descripción se define a mano en la app).
+  async publishContent(input: PublishInput, account: ProviderAccount): Promise<PublishResult> {
+    if (input.mediaType !== "video") {
+      throw new Error("TikTok solo acepta video en este flujo (modo Draft, video.upload).");
+    }
+    const publishId = await uploadTikTokVideoToInbox(account.accessToken, input.mediaUrl);
+    return { kind: "draft_sent", externalId: publishId };
   },
 };

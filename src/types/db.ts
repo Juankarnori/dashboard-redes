@@ -316,6 +316,14 @@ export interface Database {
           status: string;
           source_rec_id: string | null;
           campaign_id: string | null;
+          account_id: string | null;
+          caption: string | null;
+          media_path: string | null;
+          media_type: string | null;
+          external_post_id: string | null;
+          permalink: string | null;
+          publish_error: string | null;
+          published_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -327,6 +335,14 @@ export interface Database {
           status?: string;
           source_rec_id?: string | null;
           campaign_id?: string | null;
+          account_id?: string | null;
+          caption?: string | null;
+          media_path?: string | null;
+          media_type?: string | null;
+          external_post_id?: string | null;
+          permalink?: string | null;
+          publish_error?: string | null;
+          published_at?: string | null;
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["content_calendar"]["Insert"]>;
@@ -350,6 +366,13 @@ export interface Database {
             columns: ["campaign_id"];
             isOneToOne: false;
             referencedRelation: "campaigns";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "content_calendar_account_id_fkey";
+            columns: ["account_id"];
+            isOneToOne: false;
+            referencedRelation: "accounts";
             referencedColumns: ["id"];
           },
         ];

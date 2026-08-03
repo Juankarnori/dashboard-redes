@@ -1,10 +1,12 @@
-import type { PlatformProvider, ProviderAccount, ProviderContentItem, ProviderComment } from "./types";
+import type { PlatformProvider, ProviderAccount, ProviderContentItem, ProviderComment, PublishInput, PublishResult } from "./types";
 import {
   fetchFacebookPosts,
   fetchPostInsights,
   fetchFacebookAudience,
   fetchFacebookComments,
   postFacebookCommentReply,
+  publishFacebookPhoto,
+  publishFacebookVideo,
   type FbPost,
   type FbComment,
 } from "@/lib/meta/facebook";
@@ -91,5 +93,21 @@ export const facebookProvider: PlatformProvider = {
 
   async postCommentReply(commentExternalId: string, message: string, account: ProviderAccount) {
     return postFacebookCommentReply(commentExternalId, message, account.accessToken);
+  },
+
+  // Sin container ni paso de estado — un solo llamado y listo.
+  async publishContent(input: PublishInput, account: ProviderAccount): Promise<PublishResult> {
+    const result =
+      input.mediaType === "video"
+        ? await publishFacebookVideo(account.externalId, account.accessToken, {
+            videoUrl: input.mediaUrl,
+            caption: input.caption,
+          })
+        : await publishFacebookPhoto(account.externalId, account.accessToken, {
+            imageUrl: input.mediaUrl,
+            caption: input.caption,
+          });
+
+    return { kind: "published", externalId: result.postId, permalink: result.permalink };
   },
 };

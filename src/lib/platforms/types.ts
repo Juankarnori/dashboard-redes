@@ -41,7 +41,34 @@ export interface PlatformProvider {
    * larga duración y no tienen este mecanismo.
    */
   refreshTokenIfNeeded?(account: ProviderAccount): Promise<RefreshedToken | null>;
+
+  /**
+   * Publica una pieza nueva. Opcional: cada red la implementa muy
+   * distinto (Meta publica de verdad y devuelve un permalink; TikTok en
+   * modo Draft solo entrega el archivo al inbox del creador, que lo
+   * termina de publicar a mano en la app — ver PublishResult).
+   */
+  publishContent?(input: PublishInput, account: ProviderAccount): Promise<PublishResult>;
+
+  /**
+   * Solo lo implementa Instagram: el container de video se procesa de
+   * forma asíncrona del lado de Meta y puede tardar más de lo que dura
+   * una invocación serverless (Vercel Hobby, 10s). El caller lo pollea
+   * desde el cliente hasta que deje de estar "processing".
+   */
+  checkPublishStatus?(containerId: string, account: ProviderAccount): Promise<PublishResult>;
 }
+
+export interface PublishInput {
+  mediaUrl: string; // URL pública (Supabase Storage) — las 3 APIs la piden, no aceptan upload binario directo
+  mediaType: "image" | "video";
+  caption: string;
+}
+
+export type PublishResult =
+  | { kind: "published"; externalId: string; permalink?: string }
+  | { kind: "processing"; containerId: string } // solo IG video: falta pollear checkPublishStatus
+  | { kind: "draft_sent"; externalId: string }; // solo TikTok: en el inbox del creador, falta que la persona lo termine de publicar
 
 export interface RefreshedToken {
   accessToken: string;

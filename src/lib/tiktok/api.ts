@@ -134,3 +134,46 @@ export async function fetchTikTokVideos(accessToken: string): Promise<TikTokVide
 
   return videos;
 }
+
+interface TikTokInboxUploadResponse {
+  data?: { publish_id: string };
+  error?: TikTokApiError;
+}
+
+/**
+ * Sube un video al inbox del creador (Content Posting API, scope
+ * video.upload — modo "Draft", NO "Direct Post"/video.publish). El video
+ * llega a la app de TikTok del usuario como borrador; la persona lo
+ * termina de publicar a mano. Usa PULL_FROM_URL: TikTok descarga el
+ * archivo desde `videoUrl`, que por eso tiene que estar en un dominio
+ * verificado ante TikTok (ver getProxiedMediaUrl en lib/supabase/storage.ts
+ * — la URL de Supabase Storage NO sirve para esto).
+ *
+ * Endpoint y forma de la respuesta confirmados contra la documentación
+ * oficial de TikTok. `publish_id` (formato `v_inbox_url~v2.xxx`) se
+ * guarda como external_post_id. Rate limit: 6 req/min por access token
+ * — no hay reintento automático acá si se pisa el límite, el error de
+ * TikTok sube tal cual hasta publish_error.
+ */
+export async function uploadTikTokVideoToInbox(accessToken: string, videoUrl: string): Promise<string> {
+  const url = `${TIKTOK_API_BASE}/post/publish/inbox/video/init/`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      source_info: { source: "PULL_FROM_URL", video_url: videoUrl },
+    }),
+  });
+  const json: TikTokInboxUploadResponse = await res.json();
+
+  if (!res.ok || (json.error && json.error.code !== "ok")) {
+    throw new Error(`TikTok upload a inbox falló: ${res.status} ${JSON.stringify(json.error)}`);
+  }
+  if (!json.data?.publish_id) {
+    throw new Error("TikTok upload a inbox: respuesta sin publish_id");
+  }
+  return json.data.publish_id;
+}

@@ -133,6 +133,57 @@ export async function postFacebookCommentReply(
   return json.id;
 }
 
+export interface FbPublishResult {
+  postId: string;
+  permalink?: string;
+}
+
+/**
+ * Publica una foto en la Page vía /photos — a diferencia de Instagram,
+ * es un único llamado síncrono (sin container ni paso de estado).
+ * Devuelve el post_id (el de la foto en sí; Meta lo linkea a un post
+ * del feed automáticamente) y su permalink cuando lo puede resolver.
+ */
+export async function publishFacebookPhoto(
+  pageId: string,
+  token: string,
+  input: { imageUrl: string; caption: string }
+): Promise<FbPublishResult> {
+  const url = `${GRAPH_BASE}/${pageId}/photos`;
+  const res = await fetch(url, {
+    method: "POST",
+    body: new URLSearchParams({ url: input.imageUrl, caption: input.caption, access_token: token }),
+  });
+  if (!res.ok) throw new Error(`FB publicar foto falló: ${res.status} ${await res.text()}`);
+  const json: { id: string; post_id?: string } = await res.json();
+  const postId = json.post_id ?? json.id;
+  return { postId, permalink: await fetchFacebookPermalink(postId, token) };
+}
+
+/** Publica un video en la Page vía /videos — también síncrono, sin container. */
+export async function publishFacebookVideo(
+  pageId: string,
+  token: string,
+  input: { videoUrl: string; caption: string }
+): Promise<FbPublishResult> {
+  const url = `${GRAPH_BASE}/${pageId}/videos`;
+  const res = await fetch(url, {
+    method: "POST",
+    body: new URLSearchParams({ file_url: input.videoUrl, description: input.caption, access_token: token }),
+  });
+  if (!res.ok) throw new Error(`FB publicar video falló: ${res.status} ${await res.text()}`);
+  const json: { id: string } = await res.json();
+  return { postId: json.id, permalink: await fetchFacebookPermalink(json.id, token) };
+}
+
+async function fetchFacebookPermalink(postId: string, token: string): Promise<string | undefined> {
+  const url = `${GRAPH_BASE}/${postId}?fields=permalink_url&access_token=${encodeURIComponent(token)}`;
+  const res = await fetch(url);
+  if (!res.ok) return undefined;
+  const json: { permalink_url?: string } = await res.json();
+  return json.permalink_url;
+}
+
 export interface FbAudience {
   followers_count?: number;
   fan_count?: number;
