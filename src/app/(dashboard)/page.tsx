@@ -71,30 +71,43 @@ export default async function OverviewPage({
       {alerts.length > 0 && (
         <div className="flex flex-col gap-2 px-4 pt-6 sm:px-8">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-600">Alertas</h2>
-          {alerts.map((alert) => (
-            <div
-              key={alert.id}
-              className="flex items-start gap-3 rounded-[--radius-card] border border-border bg-surface-1 p-4"
-            >
-              <span
-                className={cn(
-                  "mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide",
-                  alert.severity === "warning"
-                    ? "bg-negative-soft text-negative"
-                    : "bg-accent-soft text-accent-strong"
-                )}
+          {alerts.map((alert) => {
+            const isSpike = alert.type === "content_spike";
+            return (
+              <div
+                key={alert.id}
+                className="flex items-start gap-3 rounded-[--radius-card] border border-border bg-surface-1 p-4"
               >
-                {alert.severity === "warning" ? "Atención" : "Informativo"}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  {alert.accounts && <PlatformBadge platform={alert.accounts.platform} />}
-                  <h4 className="text-sm font-semibold text-ink-900">{alert.title}</h4>
+                <span
+                  className={cn(
+                    "mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide",
+                    alert.severity === "warning"
+                      ? "bg-negative-soft text-negative"
+                      : isSpike
+                        ? "bg-positive-soft text-positive"
+                        : "bg-accent-soft text-accent-strong"
+                  )}
+                >
+                  {alert.severity === "warning" ? "Atención" : isSpike ? "Despegando" : "Informativo"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    {alert.accounts && <PlatformBadge platform={alert.accounts.platform} />}
+                    <h4 className="text-sm font-semibold text-ink-900">{alert.title}</h4>
+                  </div>
+                  <p className="mt-0.5 text-sm text-ink-600">{alert.body}</p>
+                  {alert.content_id && (
+                    <Link
+                      href={`/content/${alert.content_id}`}
+                      className="mt-1 inline-block text-xs font-medium text-accent hover:underline"
+                    >
+                      Ver post →
+                    </Link>
+                  )}
                 </div>
-                <p className="mt-0.5 text-sm text-ink-600">{alert.body}</p>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

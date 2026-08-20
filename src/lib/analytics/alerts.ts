@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { engagementRate, latestByContentId } from "./engagement";
-import { getAlertInputs } from "./queries";
+import { getAlertInputs, getContentForAnalysis } from "./queries";
 import type { Database, AlertSeverity } from "@/types/db";
 
 type DB = SupabaseClient<Database>;
@@ -13,8 +13,20 @@ const ENGAGEMENT_DROP_WARNING = 0.4; // 40%
 const NO_POSTS_INFO_DAYS = 3;
 const NO_POSTS_WARNING_DAYS = 7;
 
+// Umbrales Fase 3 — despegue (content_spike) y caída de alcance (reach_drop).
+const SPIKE_WINDOW_DAYS = 30; // N: ventana de contenido "reciente" de la cuenta
+const SPIKE_STD_DEV_MULTIPLIER = 2; // k: cuántos desvíos por encima de la media para "despegar"
+const SPIKE_MIN_SAMPLES = 5; // mínimo de piezas en la ventana para que media/desvío tengan sentido
+const REACH_DROP_WINDOW_POSTS = 5; // X: cuántos posts recientes se promedian
+const REACH_DROP_INFO_PCT = 0.6; // Y: cae por debajo del 60% del promedio anterior → info
+const REACH_DROP_WARNING_PCT = 0.4; // cae por debajo del 40% → warning
+
 function average(nums: number[]): number {
   return nums.length === 0 ? 0 : nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+function stdDev(nums: number[], mean: number): number {
+  return Math.sqrt(average(nums.map((n) => (n - mean) ** 2)));
 }
 
 export interface EngagementDropResult {
@@ -82,6 +94,89 @@ export function detectNoPostsStreak(
   };
 }
 
+export interface ContentSpikeCandidate {
+  contentId: string;
+  caption: string | null;
+  publishedAt: string;
+  rate: number;
+}
+
+export interface ContentSpikeResult extends ContentSpikeCandidate {
+  meanRate: number;
+  stdDevRate: number;
+  threshold: number;
+}
+
+/**
+ * Contenido que "despega": su engagement rate supera la media + k·desvío
+ * estándar del resto de la cuenta en una ventana de N días (k≈2, ver
+ * SPIKE_STD_DEV_MULTIPLIER). Usa engagementRate (no alcance crudo) porque
+ * es la métrica ya normalizada que se compara en todo el dashboard — un
+ * alcance más alto no siempre es "despegando", pero un engagement rate
+ * muy por encima de lo normal de la cuenta sí es señal de que conviene
+ * empujarlo con anuncio.
+ */
+export function detectContentSpikes(
+  items: ContentSpikeCandidate[],
+  now: Date = new Date()
+): ContentSpikeResult[] {
+  const cutoff = now.getTime() - SPIKE_WINDOW_DAYS * 86_400_000;
+  const windowItems = items.filter((i) => new Date(i.publishedAt).getTime() >= cutoff);
+  if (windowItems.length < SPIKE_MIN_SAMPLES) return [];
+
+  const rates = windowItems.map((i) => i.rate);
+  const meanRate = average(rates);
+  const stdDevRate = stdDev(rates, meanRate);
+  if (stdDevRate === 0) return []; // todo el mundo con el mismo rate — no hay "despegue" relativo
+
+  const threshold = meanRate + SPIKE_STD_DEV_MULTIPLIER * stdDevRate;
+
+  return windowItems
+    .filter((i) => i.rate > threshold)
+    .map((i) => ({ ...i, meanRate, stdDevRate, threshold }));
+}
+
+export interface ReachDropResult {
+  currentAvgReach: number;
+  previousAvgReach: number;
+  ratio: number; // currentAvgReach / previousAvgReach
+  severity: AlertSeverity;
+}
+
+/**
+ * Caída de alcance: promedio de los últimos X posts (REACH_DROP_WINDOW_POSTS)
+ * vs. el promedio de los X posts anteriores a esos. A diferencia de
+ * detectEngagementDrop (engagement rate, ventana calendario semanal),
+ * esta usa alcance crudo y ventana por cantidad de posts — reacciona más
+ * rápido a una caída reciente sin esperar a que pase una semana completa.
+ */
+export function detectReachDrop(
+  items: { publishedAt: string | null; reach: number | null }[]
+): ReachDropResult | null {
+  const sorted = items
+    .filter((i): i is { publishedAt: string; reach: number } => !!i.publishedAt && !!i.reach && i.reach > 0)
+    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
+  if (sorted.length < REACH_DROP_WINDOW_POSTS * 2) return null; // no hay suficiente historial para comparar
+
+  const recent = sorted.slice(0, REACH_DROP_WINDOW_POSTS).map((i) => i.reach);
+  const previous = sorted.slice(REACH_DROP_WINDOW_POSTS, REACH_DROP_WINDOW_POSTS * 2).map((i) => i.reach);
+
+  const currentAvgReach = average(recent);
+  const previousAvgReach = average(previous);
+  if (previousAvgReach <= 0) return null;
+
+  const ratio = currentAvgReach / previousAvgReach;
+  if (ratio >= REACH_DROP_INFO_PCT) return null;
+
+  return {
+    currentAvgReach,
+    previousAvgReach,
+    ratio,
+    severity: ratio < REACH_DROP_WARNING_PCT ? "warning" : "info",
+  };
+}
+
 export interface AlertAccountInfo {
   id: string;
   brand_id: string;
@@ -125,6 +220,55 @@ export async function recomputeAccountAlerts(supabase: DB, account: AlertAccount
       title: `${streak.daysSinceLastPost} días sin publicar`,
       body: `${account.label} no tiene contenido nuevo desde hace ${streak.daysSinceLastPost} días.`,
       data: { daysSinceLastPost: streak.daysSinceLastPost },
+    });
+  }
+
+  // Insumos de Fase 3 (despegue + caída de alcance): reusa
+  // getContentForAnalysis, la misma fuente que recommendations.ts, en vez
+  // de armar otra query de content+metrics.
+  const items = await getContentForAnalysis(supabase, [account.id]);
+
+  const spikeCandidates: ContentSpikeCandidate[] = items
+    .filter((i) => i.content.published_at && i.latestMetrics)
+    .map((i) => ({
+      contentId: i.content.id,
+      caption: i.content.caption,
+      publishedAt: i.content.published_at as string,
+      rate: i.latestMetrics ? engagementRate(i.latestMetrics) : null,
+    }))
+    .filter((i): i is ContentSpikeCandidate => i.rate !== null);
+
+  for (const spike of detectContentSpikes(spikeCandidates)) {
+    rows.push({
+      brand_id: account.brand_id,
+      account_id: account.id,
+      content_id: spike.contentId,
+      type: "content_spike",
+      severity: "info",
+      title: "Contenido despegando",
+      body: `${account.label}: "${(spike.caption ?? "").slice(0, 60) || "(sin descripción)"}" tiene ${(spike.rate * 100).toFixed(1)}% de engagement, muy por encima del promedio de la cuenta (${(spike.meanRate * 100).toFixed(1)}%). Considéralo para anuncio.`,
+      data: { rate: spike.rate, meanRate: spike.meanRate, stdDevRate: spike.stdDevRate, threshold: spike.threshold },
+    });
+  }
+
+  const reachItems = items.map((i) => ({
+    publishedAt: i.content.published_at,
+    reach: i.latestMetrics?.reach ?? null,
+  }));
+  const reachDrop = detectReachDrop(reachItems);
+  if (reachDrop) {
+    rows.push({
+      brand_id: account.brand_id,
+      account_id: account.id,
+      type: "reach_drop",
+      severity: reachDrop.severity,
+      title: `Alcance cayó a ${(reachDrop.ratio * 100).toFixed(0)}% del promedio anterior`,
+      body: `${account.label}: los últimos ${REACH_DROP_WINDOW_POSTS} posts promedian ${Math.round(reachDrop.currentAvgReach).toLocaleString("es")} de alcance, vs. ${Math.round(reachDrop.previousAvgReach).toLocaleString("es")} de los ${REACH_DROP_WINDOW_POSTS} anteriores.`,
+      data: {
+        currentAvgReach: reachDrop.currentAvgReach,
+        previousAvgReach: reachDrop.previousAvgReach,
+        ratio: reachDrop.ratio,
+      },
     });
   }
 

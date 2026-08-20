@@ -14,7 +14,7 @@ export type ContentType = "post" | "reel" | "story" | "carousel" | "video";
 export type AccountRole = "business" | "creator" | "page";
 export type AccountStatus = "active" | "expired" | "revoked";
 export type RecommendationStatus = "pending" | "in_progress" | "published";
-export type AlertType = "engagement_drop" | "no_posts_streak";
+export type AlertType = "engagement_drop" | "no_posts_streak" | "content_spike" | "reach_drop";
 export type AlertSeverity = "warning" | "info";
 export type CommentSentiment = "positive" | "negative" | "question" | "spam" | "lead" | "neutral";
 
@@ -419,6 +419,7 @@ export interface Database {
           body: string;
           data: Record<string, unknown>;
           detected_at: string;
+          content_id: string | null;
         };
         Insert: {
           id?: string;
@@ -430,6 +431,7 @@ export interface Database {
           body: string;
           data?: Record<string, unknown>;
           detected_at?: string;
+          content_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["alerts"]["Insert"]>;
         Relationships: [
@@ -445,6 +447,13 @@ export interface Database {
             columns: ["account_id"];
             isOneToOne: false;
             referencedRelation: "accounts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "alerts_content_id_fkey";
+            columns: ["content_id"];
+            isOneToOne: false;
+            referencedRelation: "content";
             referencedColumns: ["id"];
           },
         ];
