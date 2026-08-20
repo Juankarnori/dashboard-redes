@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: "/comments", label: "Comentarios" },
   { href: "/calendar", label: "Calendario" },
   { href: "/recommendations", label: "Recomendaciones" },
+  { href: "/reports", label: "Reportes" },
   { href: "/settings/accounts", label: "Cuentas" },
 ];
 

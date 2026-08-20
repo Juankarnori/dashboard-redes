@@ -1,0 +1,25 @@
+name: weekly-report
+
+on:
+  schedule:
+    # Lunes 8:00 UTC — resume la semana que acaba de terminar (ver
+    # computeReportWeek en weekly-report.ts). Archivo separado de
+    # sync.yml a propósito: si este cron viviera en el mismo `schedule:`
+    # de sync.yml, el job `sync` también se dispararía ahí y caería en
+    # scope=all por default, duplicando trabajo.
+    - cron: "0 8 * * 1"
+  workflow_dispatch: {}
+
+env:
+  APP_URL: ${{ secrets.APP_URL }}
+  SYNC_CRON_SECRET: ${{ secrets.SYNC_CRON_SECRET }}
+
+jobs:
+  weekly-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generar reportes semanales (todos los negocios, una sola llamada)
+        run: |
+          curl -sf -X POST \
+            -H "Authorization: Bearer $SYNC_CRON_SECRET" \
+            "$APP_URL/api/reports/weekly"

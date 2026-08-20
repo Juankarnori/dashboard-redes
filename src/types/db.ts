@@ -541,6 +541,34 @@ export interface Database {
           },
         ];
       };
+      reports: {
+        Row: {
+          id: string;
+          brand_id: string;
+          week_start: string;
+          body: string;
+          metrics: Record<string, unknown>;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          brand_id: string;
+          week_start: string;
+          body: string;
+          metrics?: Record<string, unknown>;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["reports"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "reports_brand_id_fkey";
+            columns: ["brand_id"];
+            isOneToOne: false;
+            referencedRelation: "brands";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

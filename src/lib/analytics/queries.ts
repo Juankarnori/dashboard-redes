@@ -158,6 +158,58 @@ export async function getContentForAnalysis(supabase: DB, accountIds: string[]) 
   });
 }
 
+/** Igual que getContentForAnalysis, pero acotado a un rango [start, end) de published_at — insumo del reporte semanal (Fase 4). */
+export async function getContentForAnalysisInRange(
+  supabase: DB,
+  accountIds: string[],
+  start: string,
+  end: string
+) {
+  if (accountIds.length === 0) return [];
+
+  const { data: contentRows } = await supabase
+    .from("content")
+    .select("*, content_metrics(*)")
+    .in("account_id", accountIds)
+    .gte("published_at", start)
+    .lt("published_at", end)
+    .order("published_at", { ascending: false });
+
+  return (contentRows ?? []).map((c) => {
+    const metricsRows = (c as unknown as { content_metrics: ContentMetricsRow[] }).content_metrics ?? [];
+    const latest = latestByContentId(metricsRows.map((m) => ({ ...m, content_id: c.id }))).get(c.id);
+    return { content: c as ContentRow, latestMetrics: latest ?? null };
+  });
+}
+
+export interface UnansweredCommentStats {
+  total: number;
+  leads: number;
+}
+
+/** Comentarios de terceros sin responder (para el reporte semanal) — mismo filtro base que getCommentsInbox. */
+export async function getUnansweredCommentStats(
+  supabase: DB,
+  accountIds: string[]
+): Promise<UnansweredCommentStats> {
+  if (accountIds.length === 0) return { total: 0, leads: 0 };
+
+  const { data: contentRows } = await supabase.from("content").select("id").in("account_id", accountIds);
+  const contentIds = (contentRows ?? []).map((c) => c.id);
+  if (contentIds.length === 0) return { total: 0, leads: 0 };
+
+  const { data, error } = await supabase
+    .from("comments")
+    .select("sentiment")
+    .in("content_id", contentIds)
+    .is("parent_comment_id", null)
+    .eq("is_business_reply", false)
+    .eq("replied", false);
+
+  if (error || !data) return { total: 0, leads: 0 };
+  return { total: data.length, leads: data.filter((c) => c.sentiment === "lead").length };
+}
+
 export interface AccountComparisonStat {
   accountId: string;
   label: string;
