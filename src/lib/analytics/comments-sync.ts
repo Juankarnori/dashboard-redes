@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/db";
 import type { PlatformProvider, ProviderAccount, ProviderComment } from "@/lib/platforms/types";
+import { decryptToken } from "@/lib/crypto";
+import { getProvider } from "@/lib/platforms";
+import { refreshAccountTokenIfNeeded } from "@/lib/platforms/token-refresh";
 
 type DB = SupabaseClient<Database>;
 
@@ -151,4 +154,42 @@ async function syncCommentsForContent(
   }
 
   return synced;
+}
+
+/**
+ * Resuelve una cuenta activa (provider + token, con refresh si hace
+ * falta) y sincroniza sus comentarios recientes. Es el mismo camino que
+ * usa `/api/sync?scope=comments` para una cuenta — se comparte para que
+ * el botón "Actualizar ahora" de /comments (`comment-actions.ts`) no
+ * duplique la resolución de provider/token.
+ */
+export async function syncAccountComments(supabase: DB, accountId: string): Promise<number> {
+  const { data: account, error: accountError } = await supabase
+    .from("accounts")
+    .select("*")
+    .eq("id", accountId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (accountError || !account) {
+    throw new Error(`Cuenta ${accountId} no encontrada o inactiva.`);
+  }
+
+  const provider = getProvider(account.platform);
+  const accessToken = decryptToken(account.access_token);
+  const refreshToken = account.refresh_token ? decryptToken(account.refresh_token) : undefined;
+  const providerAccount = await refreshAccountTokenIfNeeded(
+    supabase,
+    provider,
+    {
+      id: account.id,
+      externalId: account.external_id,
+      accessToken,
+      refreshToken,
+      tokenExpiresAt: account.token_expires_at,
+    },
+    account.id
+  );
+
+  return syncCommentsForAccount(supabase, provider, providerAccount, account.id);
 }

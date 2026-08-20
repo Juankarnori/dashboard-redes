@@ -4,7 +4,7 @@ import { useState, useTransition, type FormEvent } from "react";
 import { refreshTrends } from "./actions";
 import { Button } from "@/components/ui/Button";
 
-export function TrendsRefreshForm({ brandId }: { brandId: string }) {
+export function TrendsRefreshForm({ brandId, aiEnabled }: { brandId: string; aiEnabled: boolean }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -18,6 +18,20 @@ export function TrendsRefreshForm({ brandId }: { brandId: string }) {
       if (result.error) setError(result.error);
       else setOpen(false);
     });
+  }
+
+  if (!aiEnabled) {
+    return (
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled
+        title="Función de IA desactivada (no configurada)"
+      >
+        Actualizar tendencias
+      </Button>
+    );
   }
 
   return (

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 
 const OBJECTIVE_SUGGESTIONS = ["Vender más", "Dar a conocer producto nuevo", "Liquidar inventario"];
 
-export function PromotionForm({ brandId }: { brandId: string }) {
+export function PromotionForm({ brandId, aiEnabled }: { brandId: string; aiEnabled: boolean }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -20,6 +20,14 @@ export function PromotionForm({ brandId }: { brandId: string }) {
       if (result.error) setError(result.error);
       else setOpen(false);
     });
+  }
+
+  if (!aiEnabled) {
+    return (
+      <Button type="button" variant="secondary" size="sm" disabled title="Función de IA desactivada (no configurada)">
+        + Promoción
+      </Button>
+    );
   }
 
   return (

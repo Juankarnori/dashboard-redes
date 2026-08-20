@@ -19,6 +19,7 @@ export default async function RecommendationsPage({
   const { data: brands } = await supabase.from("brands").select("id, name, color");
 
   const selectedBrandId = brand ?? brands?.[0]?.id;
+  const aiEnabled = !!process.env.ANTHROPIC_API_KEY;
 
   const { data: recommendations } = selectedBrandId
     ? await supabase
@@ -48,14 +49,23 @@ export default async function RecommendationsPage({
         action={
           selectedBrandId && (
             <div className="flex items-center gap-2">
-              <TrendsRefreshForm brandId={selectedBrandId} />
-              <PromotionForm brandId={selectedBrandId} />
+              <TrendsRefreshForm brandId={selectedBrandId} aiEnabled={aiEnabled} />
+              <PromotionForm brandId={selectedBrandId} aiEnabled={aiEnabled} />
               <GenerateRecsButton brandId={selectedBrandId} />
             </div>
           )
         }
       />
       <FilterBar brands={brands ?? []} />
+
+      {!aiEnabled && (
+        <p className="mx-4 mt-4 rounded-[--radius-card] border border-dashed border-border bg-surface-1 px-4 py-2.5 text-xs text-ink-600 sm:mx-8">
+          Función de IA desactivada: falta configurar <code>ANTHROPIC_API_KEY</code>. El mejor
+          horario, el mejor formato y las ideas de contenido calculadas con tus datos siguen
+          disponibles con el botón &quot;Generar recomendaciones&quot;; las promociones y
+          tendencias con IA quedan pausadas hasta que configures la clave.
+        </p>
+      )}
 
       <div className="flex flex-col gap-8 px-4 py-6 sm:px-8">
         {!selectedBrandId ? (

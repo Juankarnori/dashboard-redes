@@ -2,16 +2,19 @@ name: sync-metrics
 
 on:
   schedule:
-    # Sync completo (posts, reels, audiencia): cada 4h.
-    # Vercel Hobby limita el cron nativo a 1x/día, por eso usamos GH Actions.
-    - cron: "0 */4 * * *"
+    # Sync completo (posts, reels, audiencia): cada hora, para tener
+    # métricas frescas sin pasarnos del tier gratis de GH Actions.
+    - cron: "0 * * * *"
     # Historias: cada hora, porque expiran a las 24h y una corrida cada
     # 4h se las puede perder si se publican y borran entre medio.
     - cron: "15 * * * *"
+    # Comentarios: cada 30 min, para priorizar leads/quejas sin esperar
+    # al sync completo.
+    - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       scope:
-        description: "all | stories"
+        description: "all | stories | comments"
         default: "all"
         required: false
 
@@ -28,6 +31,8 @@ jobs:
         run: |
           if [ "${{ github.event.schedule }}" = "15 * * * *" ]; then
             echo "value=stories" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "*/30 * * * *" ]; then
+            echo "value=comments" >> "$GITHUB_OUTPUT"
           elif [ -n "${{ github.event.inputs.scope }}" ]; then
             echo "value=${{ github.event.inputs.scope }}" >> "$GITHUB_OUTPUT"
           else

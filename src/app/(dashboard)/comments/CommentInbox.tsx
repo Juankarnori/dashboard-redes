@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { replyToComment } from "@/lib/analytics/comment-actions";
+import { replyToComment, refreshCommentsNow } from "@/lib/analytics/comment-actions";
 import { REPLY_TEMPLATE } from "@/components/dashboard/ReplyForm";
 import { Button } from "@/components/ui/Button";
 import type { CommentInboxItem } from "@/lib/analytics/queries";
@@ -20,10 +21,36 @@ export interface BulkState {
 }
 
 export function CommentInbox({ comments: initialComments }: { comments: CommentInboxItem[] }) {
+  const router = useRouter();
   const [comments, setComments] = useState(initialComments);
   const [tab, setTab] = useState<Tab>("pending");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkState, setBulkState] = useState<BulkState | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [isRefreshing, startRefresh] = useTransition();
+
+  // `initialComments` cambia cuando el padre (server component) se
+  // re-renderiza tras revalidatePath (p. ej. después de "Actualizar
+  // ahora"). Ajuste de estado durante el render (patrón recomendado por
+  // React para "resetear" estado cuando cambia un prop) en vez de un
+  // efecto, que dispararía un render en cascada.
+  const [prevInitialComments, setPrevInitialComments] = useState(initialComments);
+  if (initialComments !== prevInitialComments) {
+    setPrevInitialComments(initialComments);
+    setComments(initialComments);
+  }
+
+  function handleRefreshNow() {
+    setRefreshError(null);
+    startRefresh(async () => {
+      const result = await refreshCommentsNow();
+      if (result.error) {
+        setRefreshError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
 
   // Bandera de corte para un futuro botón "Detener": el loop la revisa
   // antes de arrancar cada ítem. No aborta una llamada ya en vuelo (no
@@ -117,11 +144,17 @@ export function CommentInbox({ comments: initialComments }: { comments: CommentI
           </TabButton>
         </div>
 
-        {tab === "pending" && selectedIds.size > 0 && (
-          <Button type="button" variant="primary" size="sm" onClick={openBulkModal}>
-            Enviar plantilla a seleccionados ({selectedIds.size})
+        <div className="flex items-center gap-3">
+          {refreshError && <p className="text-xs text-negative">{refreshError}</p>}
+          <Button type="button" variant="ghost" size="sm" onClick={handleRefreshNow} disabled={isRefreshing}>
+            {isRefreshing ? "Actualizando…" : "Actualizar ahora"}
           </Button>
-        )}
+          {tab === "pending" && selectedIds.size > 0 && (
+            <Button type="button" variant="primary" size="sm" onClick={openBulkModal}>
+              Enviar plantilla a seleccionados ({selectedIds.size})
+            </Button>
+          )}
+        </div>
       </div>
 
       {tab === "pending" && pendingComments.length > 0 && (

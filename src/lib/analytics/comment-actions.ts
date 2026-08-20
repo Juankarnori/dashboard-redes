@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { decryptToken } from "@/lib/crypto";
 import { getProvider } from "@/lib/platforms";
+import { syncAccountComments } from "@/lib/analytics/comments-sync";
 
 export interface ReplyToCommentResult {
   error?: string;
@@ -74,4 +75,36 @@ export async function replyToComment(commentId: string, message: string): Promis
   revalidatePath(`/content/${comment.content_id}`);
   revalidatePath("/comments");
   return {};
+}
+
+export interface RefreshCommentsResult {
+  error?: string;
+  synced?: number;
+}
+
+/**
+ * Botón "Actualizar ahora" de /comments: sincroniza comentarios de todas
+ * las cuentas activas (un solo dueño, así que "activas" = "del dueño")
+ * on-demand, sin esperar al cron de GitHub Actions. Mismo camino que
+ * `/api/sync?scope=comments` (ver `syncAccountComments`), pero invocado
+ * directo como server action en vez de por HTTP.
+ */
+export async function refreshCommentsNow(): Promise<RefreshCommentsResult> {
+  const supabase = await createClient();
+
+  const { data: accounts, error } = await supabase.from("accounts").select("id").eq("status", "active");
+  if (error) return { error: error.message };
+  if (!accounts || accounts.length === 0) return { synced: 0 };
+
+  let synced = 0;
+  for (const account of accounts) {
+    try {
+      synced += await syncAccountComments(supabase, account.id);
+    } catch (err) {
+      console.error(`[comments] No se pudo actualizar comentarios de la cuenta ${account.id}:`, err);
+    }
+  }
+
+  revalidatePath("/comments");
+  return { synced };
 }
