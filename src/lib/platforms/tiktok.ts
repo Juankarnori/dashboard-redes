@@ -1,5 +1,12 @@
 import type { PlatformProvider, ProviderAccount, ProviderContentItem, PublishInput, PublishResult, RefreshedToken } from "./types";
-import { fetchTikTokUserInfo, fetchTikTokVideos, uploadTikTokVideoToInbox, type TikTokVideo } from "@/lib/tiktok/api";
+import {
+  fetchTikTokUserInfo,
+  fetchTikTokVideos,
+  uploadTikTokVideoToInbox,
+  uploadTikTokPhotosToInbox,
+  TIKTOK_PHOTO_MAX_ITEMS,
+  type TikTokVideo,
+} from "@/lib/tiktok/api";
 import { refreshTikTokToken } from "@/lib/tiktok/oauth";
 
 // Refresca si falta menos de esto para vencer (o si ya venció).
@@ -78,10 +85,26 @@ export const tiktokProvider: PlatformProvider = {
   // entrega el archivo al inbox del creador — por eso `caption` no se
   // usa acá (el título/descripción se define a mano en la app).
   async publishContent(input: PublishInput, account: ProviderAccount): Promise<PublishResult> {
-    if (input.mediaType !== "video") {
-      throw new Error("TikTok solo acepta video en este flujo (modo Draft, video.upload).");
+    if (input.media.length === 0) throw new Error("Falta el archivo a publicar.");
+
+    // Video: siempre single (TikTok no arma carrusel de video acá).
+    if (input.media.length === 1 && input.media[0].type === "video") {
+      const publishId = await uploadTikTokVideoToInbox(account.accessToken, input.media[0].url);
+      return { kind: "draft_sent", externalId: publishId };
     }
-    const publishId = await uploadTikTokVideoToInbox(account.accessToken, input.mediaUrl);
+
+    // Foto (single o carrusel): modo foto de la Content Posting API.
+    if (input.media.some((m) => m.type !== "image")) {
+      throw new Error("TikTok no puede mezclar video con imágenes en el mismo post.");
+    }
+    if (input.media.length > TIKTOK_PHOTO_MAX_ITEMS) {
+      throw new Error(`TikTok acepta hasta ${TIKTOK_PHOTO_MAX_ITEMS} fotos por post.`);
+    }
+    const publishId = await uploadTikTokPhotosToInbox(
+      account.accessToken,
+      input.media.map((m) => m.url),
+      input.caption
+    );
     return { kind: "draft_sent", externalId: publishId };
   },
 };

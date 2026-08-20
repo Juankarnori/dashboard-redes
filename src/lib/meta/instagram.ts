@@ -242,6 +242,56 @@ export async function createInstagramContainer(
   return { containerId: json.id };
 }
 
+/** Máximo de elementos que acepta un carrusel de Instagram. */
+export const IG_CAROUSEL_MAX_ITEMS = 10;
+
+/**
+ * Carrusel, paso 1 de 3: un "child container" por imagen, con
+ * `is_carousel_item=true` y SIN caption (el caption va en el container
+ * padre). Solo imágenes — Meta no permite mezclar tipos en un carrusel
+ * armado por API de esta forma.
+ */
+export async function createInstagramCarouselChildContainer(
+  igUserId: string,
+  token: string,
+  imageUrl: string
+): Promise<IgContainerCreated> {
+  const params = new URLSearchParams({
+    image_url: imageUrl,
+    is_carousel_item: "true",
+    access_token: token,
+  });
+  const url = `${GRAPH_BASE}/${igUserId}/media`;
+  const res = await fetch(url, { method: "POST", body: params });
+  if (!res.ok) throw new Error(`IG crear child container de carrusel falló: ${res.status} ${await res.text()}`);
+  const json: { id: string } = await res.json();
+  return { containerId: json.id };
+}
+
+/**
+ * Carrusel, paso 2 de 3: el container padre (`media_type=CAROUSEL`) que
+ * agrupa los child containers ya creados. Igual que el container simple,
+ * queda async (IN_PROGRESS) hasta que se consulta su estado.
+ */
+export async function createInstagramCarouselContainer(
+  igUserId: string,
+  token: string,
+  childContainerIds: string[],
+  caption: string
+): Promise<IgContainerCreated> {
+  const params = new URLSearchParams({
+    media_type: "CAROUSEL",
+    children: childContainerIds.join(","),
+    caption,
+    access_token: token,
+  });
+  const url = `${GRAPH_BASE}/${igUserId}/media`;
+  const res = await fetch(url, { method: "POST", body: params });
+  if (!res.ok) throw new Error(`IG crear container de carrusel falló: ${res.status} ${await res.text()}`);
+  const json: { id: string } = await res.json();
+  return { containerId: json.id };
+}
+
 export type IgContainerStatus = "IN_PROGRESS" | "FINISHED" | "ERROR" | "EXPIRED" | "PUBLISHED";
 
 /** Paso intermedio (solo relevante para video): estado del procesamiento del container. */

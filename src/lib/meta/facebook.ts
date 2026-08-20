@@ -176,6 +176,45 @@ export async function publishFacebookVideo(
   return { postId: json.id, permalink: await fetchFacebookPermalink(json.id, token) };
 }
 
+/**
+ * Multi-foto, paso 1 de 2: sube una foto "sin publicar" (`published=false`)
+ * — no aparece en el feed todavía, solo queda disponible para adjuntarla
+ * a un post vía `attached_media`. Devuelve el id de la foto (`photo_id`,
+ * no `post_id` — con published=false Meta no crea un post propio).
+ */
+export async function uploadUnpublishedFacebookPhoto(pageId: string, token: string, imageUrl: string): Promise<string> {
+  const url = `${GRAPH_BASE}/${pageId}/photos`;
+  const res = await fetch(url, {
+    method: "POST",
+    body: new URLSearchParams({ url: imageUrl, published: "false", access_token: token }),
+  });
+  if (!res.ok) throw new Error(`FB subir foto (unpublished) falló: ${res.status} ${await res.text()}`);
+  const json: { id: string } = await res.json();
+  return json.id;
+}
+
+/**
+ * Multi-foto, paso 2 de 2: crea el post del feed con varias fotos ya
+ * subidas como `attached_media` — así es como Meta arma un "álbum"/post
+ * multi-foto vía Graph API (no hay endpoint de "carrusel" separado como
+ * en Instagram).
+ */
+export async function publishFacebookMultiPhotoPost(
+  pageId: string,
+  token: string,
+  input: { photoIds: string[]; caption: string }
+): Promise<FbPublishResult> {
+  const url = `${GRAPH_BASE}/${pageId}/feed`;
+  const params = new URLSearchParams({ message: input.caption, access_token: token });
+  input.photoIds.forEach((photoId, i) => {
+    params.set(`attached_media[${i}]`, JSON.stringify({ media_fbid: photoId }));
+  });
+  const res = await fetch(url, { method: "POST", body: params });
+  if (!res.ok) throw new Error(`FB publicar post multi-foto falló: ${res.status} ${await res.text()}`);
+  const json: { id: string } = await res.json();
+  return { postId: json.id, permalink: await fetchFacebookPermalink(json.id, token) };
+}
+
 async function fetchFacebookPermalink(postId: string, token: string): Promise<string | undefined> {
   const url = `${GRAPH_BASE}/${postId}?fields=permalink_url&access_token=${encodeURIComponent(token)}`;
   const res = await fetch(url);

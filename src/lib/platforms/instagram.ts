@@ -9,9 +9,12 @@ import {
   fetchInstagramComments,
   postInstagramCommentReply,
   createInstagramContainer,
+  createInstagramCarouselChildContainer,
+  createInstagramCarouselContainer,
   checkInstagramContainerStatus,
   publishInstagramContainer,
   fetchInstagramPermalink,
+  IG_CAROUSEL_MAX_ITEMS,
   type IgMedia,
   type IgComment,
 } from "@/lib/meta/instagram";
@@ -142,7 +145,37 @@ export const instagramProvider: PlatformProvider = {
   },
 
   async publishContent(input: PublishInput, account: ProviderAccount): Promise<PublishResult> {
-    const { containerId } = await createInstagramContainer(account.externalId, account.accessToken, input);
+    if (input.media.length === 0) throw new Error("Falta el archivo a publicar.");
+
+    if (input.media.length === 1) {
+      const [item] = input.media;
+      const { containerId } = await createInstagramContainer(account.externalId, account.accessToken, {
+        mediaUrl: item.url,
+        mediaType: item.type,
+        caption: input.caption,
+      });
+      return finishOrKeepProcessing(account.externalId, containerId, account.accessToken);
+    }
+
+    // Carrusel: solo imágenes, máx. IG_CAROUSEL_MAX_ITEMS.
+    if (input.media.some((m) => m.type !== "image")) {
+      throw new Error("El carrusel de Instagram solo acepta imágenes, no video.");
+    }
+    if (input.media.length > IG_CAROUSEL_MAX_ITEMS) {
+      throw new Error(`Instagram acepta hasta ${IG_CAROUSEL_MAX_ITEMS} imágenes por carrusel.`);
+    }
+
+    const children = await Promise.all(
+      input.media.map((m) =>
+        createInstagramCarouselChildContainer(account.externalId, account.accessToken, m.url)
+      )
+    );
+    const { containerId } = await createInstagramCarouselContainer(
+      account.externalId,
+      account.accessToken,
+      children.map((c) => c.containerId),
+      input.caption
+    );
     return finishOrKeepProcessing(account.externalId, containerId, account.accessToken);
   },
 

@@ -321,6 +321,8 @@ export interface Database {
           caption: string | null;
           media_path: string | null;
           media_type: string | null;
+          media_paths: string[] | null;
+          post_group_id: string | null;
           external_post_id: string | null;
           permalink: string | null;
           publish_error: string | null;
@@ -340,6 +342,8 @@ export interface Database {
           caption?: string | null;
           media_path?: string | null;
           media_type?: string | null;
+          media_paths?: string[] | null;
+          post_group_id?: string | null;
           external_post_id?: string | null;
           permalink?: string | null;
           publish_error?: string | null;

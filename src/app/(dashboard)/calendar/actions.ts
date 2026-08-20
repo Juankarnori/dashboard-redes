@@ -91,27 +91,38 @@ export interface AttachMediaResult {
 }
 
 /**
- * Guarda la cuenta destino, el archivo (ya subido a Supabase Storage
- * directo desde el browser) y el caption de una pieza. Un nuevo attach
- * limpia cualquier intento de publicación previo (error, ids externos)
- * para que la pieza quede lista para un intento limpio.
+ * Guarda la cuenta destino, el/los archivo(s) (ya subidos a Supabase
+ * Storage directo desde el browser) y el caption de una pieza. Un nuevo
+ * attach limpia cualquier intento de publicación previo (error, ids
+ * externos) para que la pieza quede lista para un intento limpio.
+ *
+ * `mediaPaths` con 2+ elementos = carrusel (solo imágenes); con 1
+ * elemento se guarda igual que siempre en `media_path`/`media_type` para
+ * no tocar el camino feliz del caso simple (foto o video).
  */
 export async function attachCalendarMedia(
   calendarItemId: string,
-  input: { accountId: string; mediaPath: string; mediaType: "image" | "video"; caption: string }
+  input: { accountId: string; mediaPaths: string[]; mediaType: "image" | "video"; caption: string }
 ): Promise<AttachMediaResult> {
   const supabase = await createClient();
+
+  if (input.mediaPaths.length === 0) return { error: "Adjuntá al menos un archivo." };
+  if (input.mediaPaths.length > 1 && input.mediaType !== "image") {
+    return { error: "Un carrusel solo puede ser de imágenes." };
+  }
 
   const { data: account } = await supabase.from("accounts").select("platform").eq("id", input.accountId).maybeSingle();
   if (!account) return { error: "Cuenta no encontrada." };
 
+  const isCarousel = input.mediaPaths.length > 1;
   const { error } = await supabase
     .from("content_calendar")
     .update({
       account_id: input.accountId,
       platform: account.platform, // se alinea con la cuenta elegida, aunque la pieza no tuviera red definida
-      media_path: input.mediaPath,
+      media_path: isCarousel ? null : input.mediaPaths[0],
       media_type: input.mediaType,
+      media_paths: isCarousel ? input.mediaPaths : null,
       caption: input.caption,
       status: "planned",
       publish_error: null,
@@ -127,6 +138,72 @@ export async function attachCalendarMedia(
   return {};
 }
 
+export interface CreateFanOutResult {
+  error?: string;
+  postGroupId?: string;
+  itemIds?: string[];
+}
+
+/**
+ * "Adjunto una vez, publico a varias redes" (Fase 6): crea una fila de
+ * content_calendar POR CADA cuenta destino, todas con el mismo
+ * post_group_id. Cada fila queda lista para publicarse independiente con
+ * startPublish (una cuenta por invocación, como siempre) — si una red
+ * falla, las demás del grupo no se tocan.
+ */
+export async function createFanOutPost(input: {
+  brandId: string;
+  idea: string;
+  caption: string;
+  scheduledFor: string; // yyyy-mm-dd
+  campaignId?: string | null;
+  accountIds: string[];
+  mediaPaths: string[];
+  mediaType: "image" | "video";
+}): Promise<CreateFanOutResult> {
+  if (!input.brandId) return { error: "Falta seleccionar un negocio." };
+  if (input.accountIds.length === 0) return { error: "Elegí al menos una cuenta destino." };
+  if (input.mediaPaths.length === 0) return { error: "Adjuntá al menos un archivo." };
+  if (input.mediaPaths.length > 1 && input.mediaType !== "image") {
+    return { error: "Un carrusel solo puede ser de imágenes." };
+  }
+  if (!input.caption.trim()) return { error: "Escribí el texto que se va a publicar." };
+  if (!input.scheduledFor) return { error: "Elegí una fecha." };
+
+  const supabase = await createClient();
+
+  const { data: accounts } = await supabase
+    .from("accounts")
+    .select("id, platform")
+    .in("id", input.accountIds)
+    .eq("status", "active");
+  if (!accounts || accounts.length === 0) return { error: "Ninguna de las cuentas elegidas está activa." };
+
+  const postGroupId = crypto.randomUUID();
+  const isCarousel = input.mediaPaths.length > 1;
+
+  const rows = accounts.map((account) => ({
+    brand_id: input.brandId,
+    idea: input.idea || null,
+    scheduled_for: `${input.scheduledFor}T12:00:00`,
+    campaign_id: input.campaignId || null,
+    platform: account.platform,
+    account_id: account.id,
+    caption: input.caption,
+    media_path: isCarousel ? null : input.mediaPaths[0],
+    media_type: input.mediaType,
+    media_paths: isCarousel ? input.mediaPaths : null,
+    post_group_id: postGroupId,
+    status: "planned",
+  }));
+
+  const { data: inserted, error } = await supabase.from("content_calendar").insert(rows).select("id");
+  if (error) return { error: error.message };
+
+  revalidatePath("/calendar");
+  return { postGroupId, itemIds: (inserted ?? []).map((r) => r.id) };
+}
+
 export interface PublishActionResult {
   error?: string;
   status?: "publishing" | "published" | "draft_sent" | "failed";
@@ -137,11 +214,12 @@ export interface PublishActionResult {
 async function loadPublishableItem(supabase: Awaited<ReturnType<typeof createClient>>, calendarItemId: string) {
   const { data: item } = await supabase
     .from("content_calendar")
-    .select("id, account_id, media_path, media_type, caption, external_post_id")
+    .select("id, account_id, media_path, media_type, media_paths, caption, external_post_id")
     .eq("id", calendarItemId)
     .maybeSingle();
   if (!item) return { error: "Pieza no encontrada." } as const;
-  if (!item.account_id || !item.media_path || !item.media_type) {
+  const hasMedia = !!item.media_path || (item.media_paths?.length ?? 0) > 0;
+  if (!item.account_id || !hasMedia || !item.media_type) {
     return { error: "Faltan la cuenta y/o el archivo antes de poder publicar." } as const;
   }
 
@@ -210,15 +288,19 @@ export async function startPublish(calendarItemId: string): Promise<PublishActio
       account.id
     );
 
-    // TikTok exige un dominio verificado para video_url — el de Supabase
-    // Storage no lo es, así que pasa por /api/media (nuestro dominio).
-    // Meta no tiene esa exigencia y usa la URL directa de Storage.
-    const mediaUrl =
-      account.platform === "tiktok" ? getProxiedMediaUrl(item.media_path!) : getCalendarMediaUrl(supabase, item.media_path!);
-    const result = await provider.publishContent(
-      { mediaUrl, mediaType: item.media_type as "image" | "video", caption },
-      providerAccount
-    );
+    // TikTok exige un dominio verificado para las URLs que pullea — el de
+    // Supabase Storage no lo es, así que cada archivo pasa por /api/media
+    // (nuestro dominio). Meta no tiene esa exigencia y usa la URL directa
+    // de Storage. Se aplica a CADA elemento (carrusel incluido).
+    const mediaPaths = item.media_paths && item.media_paths.length > 0 ? item.media_paths : [item.media_path!];
+    const toMediaUrl = (path: string) =>
+      account.platform === "tiktok" ? getProxiedMediaUrl(path) : getCalendarMediaUrl(supabase, path);
+    const media = mediaPaths.map((path) => ({
+      url: toMediaUrl(path),
+      type: item.media_type as "image" | "video",
+    }));
+
+    const result = await provider.publishContent({ media, caption }, providerAccount);
 
     return await savePublishResult(supabase, calendarItemId, result);
   } catch (err) {
@@ -284,4 +366,40 @@ async function savePublishResult(
     .eq("id", calendarItemId);
   revalidatePath("/calendar");
   return { status: "published", permalink: result.permalink };
+}
+
+export interface PostGroupItem {
+  id: string;
+  platform: Platform;
+  accountLabel: string;
+  status: string;
+  permalink: string | null;
+  publishError: string | null;
+}
+
+/** Estado de cada red de un post fan-out (mismo post_group_id) — para el panel "publicar a varias redes". */
+export async function getPostGroupItems(postGroupId: string): Promise<PostGroupItem[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("content_calendar")
+    .select("id, platform, status, permalink, publish_error, accounts(display_name, username, platform)")
+    .eq("post_group_id", postGroupId);
+
+  const rows = (data ?? []) as unknown as {
+    id: string;
+    platform: Platform | null;
+    status: string;
+    permalink: string | null;
+    publish_error: string | null;
+    accounts: { display_name: string | null; username: string | null; platform: Platform } | null;
+  }[];
+
+  return rows.map((r) => ({
+    id: r.id,
+    platform: r.accounts?.platform ?? r.platform ?? "instagram",
+    accountLabel: r.accounts?.display_name ?? r.accounts?.username ?? "",
+    status: r.status,
+    permalink: r.permalink,
+    publishError: r.publish_error,
+  }));
 }

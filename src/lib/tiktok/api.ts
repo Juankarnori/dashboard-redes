@@ -177,3 +177,52 @@ export async function uploadTikTokVideoToInbox(accessToken: string, videoUrl: st
   }
   return json.data.publish_id;
 }
+
+/** Máximo de fotos que acepta un post de tipo carrusel/foto de TikTok. */
+export const TIKTOK_PHOTO_MAX_ITEMS = 35;
+
+/**
+ * Sube una o varias fotos al inbox del creador como borrador (modo foto
+ * de la Content Posting API — mismo scope/flujo de "Draft" que el video,
+ * `post_mode: "MEDIA_UPLOAD"`, nunca publica directo). Con una sola foto
+ * es un post de una imagen; con varias, un carrusel de fotos.
+ *
+ * ⚠️ Forma del endpoint (`media_type: "PHOTO"`, `photo_images`) tomada de
+ * la documentación pública de la Content Posting API — no probada contra
+ * una cuenta real todavía (mismo caveat que el resto de la integración de
+ * TikTok). Verificar contra la documentación viva antes de depender de
+ * esto en producción.
+ */
+export async function uploadTikTokPhotosToInbox(
+  accessToken: string,
+  photoUrls: string[],
+  title: string
+): Promise<string> {
+  const url = `${TIKTOK_API_BASE}/post/publish/content/init/`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      post_info: { title },
+      source_info: {
+        source: "PULL_FROM_URL",
+        photo_cover_index: 0,
+        photo_images: photoUrls,
+      },
+      post_mode: "MEDIA_UPLOAD",
+      media_type: "PHOTO",
+    }),
+  });
+  const json: TikTokInboxUploadResponse = await res.json();
+
+  if (!res.ok || (json.error && json.error.code !== "ok")) {
+    throw new Error(`TikTok upload de fotos a inbox falló: ${res.status} ${JSON.stringify(json.error)}`);
+  }
+  if (!json.data?.publish_id) {
+    throw new Error("TikTok upload de fotos a inbox: respuesta sin publish_id");
+  }
+  return json.data.publish_id;
+}

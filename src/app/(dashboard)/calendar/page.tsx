@@ -16,6 +16,7 @@ import { FilterBar } from "@/components/dashboard/FilterBar";
 import { CalendarGrid } from "./CalendarGrid";
 import { NewCampaignForm } from "./NewCampaignForm";
 import { NewCalendarItemForm } from "./NewCalendarItemForm";
+import { MultiPublishForm } from "./MultiPublishForm";
 import { cn } from "@/lib/utils";
 import type { Platform } from "@/types/db";
 
@@ -57,7 +58,7 @@ export default async function CalendarPage({
     : { data: [] };
 
   const CALENDAR_ITEM_FIELDS =
-    "id, idea, platform, scheduled_for, campaign_id, account_id, caption, media_path, media_type, status, external_post_id, permalink, publish_error";
+    "id, idea, platform, scheduled_for, campaign_id, account_id, caption, media_path, media_type, media_paths, post_group_id, status, external_post_id, permalink, publish_error";
 
   type CalendarItemRow = {
     id: string;
@@ -69,6 +70,8 @@ export default async function CalendarPage({
     caption: string | null;
     media_path: string | null;
     media_type: string | null;
+    media_paths: string[] | null;
+    post_group_id: string | null;
     status: string;
     external_post_id: string | null;
     permalink: string | null;
@@ -120,6 +123,7 @@ export default async function CalendarPage({
             <div className="flex items-center gap-2">
               <NewCampaignForm brandId={selectedBrandId} />
               <NewCalendarItemForm brandId={selectedBrandId} campaigns={campaigns ?? []} />
+              <MultiPublishForm brandId={selectedBrandId} accounts={accounts ?? []} campaigns={campaigns ?? []} />
             </div>
           )
         }

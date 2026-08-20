@@ -59,9 +59,20 @@ export interface PlatformProvider {
   checkPublishStatus?(containerId: string, account: ProviderAccount): Promise<PublishResult>;
 }
 
+export interface PublishMediaItem {
+  url: string; // URL pública (Supabase Storage, o el proxy /api/media para TikTok) — las 3 APIs la piden, no aceptan upload binario directo
+  type: "image" | "video";
+}
+
+/**
+ * `media` es un arreglo a propósito (Fase 6): 1 elemento = publicación
+ * simple (imagen o video, como siempre fue), 2+ elementos = carrusel —
+ * y un carrusel es siempre de imágenes (ninguna de las 3 redes mezcla
+ * video con imágenes en un carrusel armado desde acá). Cada provider
+ * valida esa regla y el máximo de elementos que soporta su red.
+ */
 export interface PublishInput {
-  mediaUrl: string; // URL pública (Supabase Storage) — las 3 APIs la piden, no aceptan upload binario directo
-  mediaType: "image" | "video";
+  media: PublishMediaItem[];
   caption: string;
 }
 

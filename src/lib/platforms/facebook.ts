@@ -7,6 +7,8 @@ import {
   postFacebookCommentReply,
   publishFacebookPhoto,
   publishFacebookVideo,
+  uploadUnpublishedFacebookPhoto,
+  publishFacebookMultiPhotoPost,
   type FbPost,
   type FbComment,
 } from "@/lib/meta/facebook";
@@ -97,14 +99,31 @@ export const facebookProvider: PlatformProvider = {
 
   // Sin container ni paso de estado — un solo llamado y listo.
   async publishContent(input: PublishInput, account: ProviderAccount): Promise<PublishResult> {
+    if (input.media.length === 0) throw new Error("Falta el archivo a publicar.");
+
+    if (input.media.length > 1) {
+      if (input.media.some((m) => m.type !== "image")) {
+        throw new Error("El post multi-foto de Facebook solo acepta imágenes, no video.");
+      }
+      const photoIds = await Promise.all(
+        input.media.map((m) => uploadUnpublishedFacebookPhoto(account.externalId, account.accessToken, m.url))
+      );
+      const result = await publishFacebookMultiPhotoPost(account.externalId, account.accessToken, {
+        photoIds,
+        caption: input.caption,
+      });
+      return { kind: "published", externalId: result.postId, permalink: result.permalink };
+    }
+
+    const [item] = input.media;
     const result =
-      input.mediaType === "video"
+      item.type === "video"
         ? await publishFacebookVideo(account.externalId, account.accessToken, {
-            videoUrl: input.mediaUrl,
+            videoUrl: item.url,
             caption: input.caption,
           })
         : await publishFacebookPhoto(account.externalId, account.accessToken, {
-            imageUrl: input.mediaUrl,
+            imageUrl: item.url,
             caption: input.caption,
           });
 

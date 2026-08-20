@@ -20,6 +20,7 @@ export interface CalendarItemFull {
   caption: string | null;
   media_path: string | null;
   media_type: string | null;
+  media_paths?: string[] | null;
   status: string;
   external_post_id: string | null;
   permalink: string | null;
@@ -53,6 +54,11 @@ export function CalendarItemPublishPanel({
   const [fileError, setFileError] = useState<string | null>(null);
   const [savedMediaPath, setSavedMediaPath] = useState(item.media_path);
   const [savedMediaType, setSavedMediaType] = useState(item.media_type);
+  // Fila creada por el fan-out (Fase 6): carrusel de varias imágenes. Este
+  // panel no las edita una por una — si el usuario no toca el input de
+  // archivo, se reenvían tal cual; si sube un archivo nuevo acá, lo
+  // reemplaza por un solo elemento (deja de ser carrusel).
+  const [savedMediaPaths, setSavedMediaPaths] = useState(item.media_paths ?? null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -106,6 +112,7 @@ export function CalendarItemPublishPanel({
     try {
       let mediaPath = savedMediaPath;
       let mediaType = savedMediaType;
+      let mediaPaths = savedMediaPaths; // carrusel existente, si lo hay
 
       if (file) {
         const supabase = createClient();
@@ -120,20 +127,22 @@ export function CalendarItemPublishPanel({
         }
         mediaPath = path;
         mediaType = file.type.startsWith("video/") ? "video" : "image";
+        mediaPaths = null; // un archivo nuevo acá reemplaza al carrusel completo por un solo elemento
       }
 
       if (!accountId) {
         setSaveError("Elegí una cuenta destino.");
         return;
       }
-      if (!mediaPath || !mediaType) {
+      const pathsToSave = mediaPaths && mediaPaths.length > 0 ? mediaPaths : mediaPath ? [mediaPath] : [];
+      if (pathsToSave.length === 0 || !mediaType) {
         setSaveError("Adjuntá un archivo.");
         return;
       }
 
       const result = await attachCalendarMedia(item.id, {
         accountId,
-        mediaPath,
+        mediaPaths: pathsToSave,
         mediaType: mediaType as "image" | "video",
         caption,
       });
@@ -142,7 +151,8 @@ export function CalendarItemPublishPanel({
         return;
       }
 
-      setSavedMediaPath(mediaPath);
+      setSavedMediaPath(pathsToSave.length === 1 ? pathsToSave[0] : null);
+      setSavedMediaPaths(pathsToSave.length > 1 ? pathsToSave : null);
       setSavedMediaType(mediaType);
       setFile(null);
       setPublish({ status: "planned", permalink: null, error: null });
@@ -173,7 +183,7 @@ export function CalendarItemPublishPanel({
     applyResult(await startPublish(item.id));
   }
 
-  const canPublish = Boolean(savedMediaPath && accountId && !file);
+  const canPublish = Boolean((savedMediaPath || savedMediaPaths) && accountId && !file);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={onClose}>
@@ -221,7 +231,14 @@ export function CalendarItemPublishPanel({
             className="text-xs text-ink-600 file:mr-2 file:rounded-[0.4rem] file:border-0 file:bg-surface-2 file:px-2 file:py-1 file:text-xs disabled:opacity-50"
           />
           {file && <span className="text-[0.7rem] text-ink-400">Nuevo archivo listo para subir: {file.name}</span>}
-          {!file && savedMediaPath && <span className="text-[0.7rem] text-ink-400">Ya tiene un archivo adjunto.</span>}
+          {!file && savedMediaPaths && (
+            <span className="text-[0.7rem] text-ink-400">
+              Ya tiene un carrusel de {savedMediaPaths.length} imágenes adjunto.
+            </span>
+          )}
+          {!file && !savedMediaPaths && savedMediaPath && (
+            <span className="text-[0.7rem] text-ink-400">Ya tiene un archivo adjunto.</span>
+          )}
           {fileError && <span className="text-negative">{fileError}</span>}
         </label>
 

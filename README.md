@@ -1,25 +1,53 @@
 # Social Pulse
 
-Dashboard de métricas y recomendaciones de contenido para Instagram y
-Facebook (arquitectura lista para agregar TikTok más adelante).
+Dashboard de un solo dueño para métricas, comentarios, publicación y
+recomendaciones de Instagram, Facebook y TikTok. Todo funciona sin
+ninguna API de pago (ver "Restricción clave" más abajo) — la única
+excepción opcional es Claude para 3 funciones puntuales de IA en
+`/recommendations`, apagadas por default.
 
-Stack: Next.js 16 (App Router) + TypeScript + Supabase (Postgres/Auth) +
-Tailwind CSS v4 + Recharts. Desplegado en Vercel (plan Hobby).
+Stack: Next.js 16 (App Router) + TypeScript + Supabase (Postgres/Auth/Storage) +
+Tailwind CSS v4 + Recharts. Desplegado en Vercel (plan Hobby); sync por
+GitHub Actions (Vercel Hobby limita el cron nativo a 1x/día).
+
+## Restricción clave: todo gratis
+
+- **Sin `ANTHROPIC_API_KEY`** el dashboard funciona igual: `/recommendations`
+  muestra un aviso de "función de IA desactivada" en vez de un error técnico,
+  y el resto (mejor horario/formato calculado en TS, alertas, reportes,
+  clasificación de comentarios) no depende de eso en absoluto.
+- Todo lo demás corre dentro de tiers gratuitos: Vercel Hobby, Supabase Free,
+  GitHub Actions gratis, WhatsApp Cloud API (conversaciones de servicio,
+  gratis e ilimitadas dentro de la ventana de 24h).
 
 ## Estado del proyecto
 
-Las 4 fases están implementadas en código. Lo que **no** está hecho todavía
-es probarlas contra una cuenta de Meta y un proyecto de Supabase reales —
-eso requiere que completes el setup de la sección 1.
+Todas las fases están implementadas en código. Lo que **no** está hecho
+todavía es probarlas contra cuentas reales de Meta/TikTok y un proyecto de
+Supabase real — eso requiere que completes el setup de la sección 1 y
+corras las migraciones nuevas (`0009` a `0013`).
 
-- **Fase 1 — Setup y autenticación** ✅
-  - Esquema de BD (`supabase/migrations/0001_init.sql`)
-  - Login del dueño (Supabase Auth)
-  - OAuth de Meta: conectar Pages de Facebook + su Instagram Business vinculado,
-    agrupadas por "negocio" (`brands`)
-- **Fase 2 — Sync de métricas** ✅ (`/api/sync`, un provider por red, GitHub Action)
-- **Fase 3 — Dashboard** ✅ (resumen, galería de contenido, detalle con evolución)
-- **Fase 4 — Recomendaciones** ✅ (mejor horario/formato en TS + ideas con Claude)
+- **Fase 1 — Setup y autenticación** ✅ — esquema de BD, login del dueño
+  (Supabase Auth), OAuth de Meta (Pages + su Instagram Business vinculado) y
+  de TikTok, agrupadas por "negocio" (`brands`).
+- **Fase 2 — Sync de métricas** ✅ — `/api/sync`, un provider por red
+  (Instagram/Facebook/TikTok), GitHub Actions cada hora (+ historias cada
+  hora, comentarios cada 30 min).
+- **Fase 3 — Dashboard** ✅ — resumen, galería de contenido, detalle con
+  evolución, comparador de cuentas y heatmap de mejor horario (`/analytics`).
+- **Fase 4 — Recomendaciones** ✅ — mejor horario/formato en TS + ideas con
+  Claude (opcional).
+- **Comentarios** ✅ — bandeja centralizada (`/comments`) con clasificación
+  por reglas (sentimiento + intención de compra, sin IA — ver
+  `lib/analytics/comment-classify.ts`), respuesta individual y masiva.
+- **Alertas** ✅ — caída de engagement, racha sin publicar, contenido que
+  despega (estadística: media + k·desvío) y caída de alcance.
+- **Reportes semanales** ✅ — `/reports`, por plantilla de string (sin IA),
+  generado por cron los lunes.
+- **WhatsApp** ✅ — `/whatsapp`, bandeja de lectura/respuesta manual vía
+  WhatsApp Cloud API (sin auto-respuesta).
+- **Calendario y publicación** ✅ — `/calendar`, publicación real a Meta/
+  TikTok con soporte de carrusel y fan-out a varias cuentas a la vez.
 
 ⚠️ Los nombres de métricas de insights de la Graph API de Meta (`lib/meta/instagram.ts`,
 `lib/meta/facebook.ts`) están escritos contra **Graph API v22.0** (`META_GRAPH_API_VERSION`
@@ -207,6 +235,36 @@ no se usan — este flujo es 100% gratis.
   propósito.
 - Sin auto-respuesta: cada mensaje se responde a mano desde `/whatsapp`.
 
+## 7. Publicar a varias redes + carrusel (Fase 6)
+
+Desde `/calendar`, el botón **"Publicar a varias redes"** adjunta un
+video (o varias imágenes para carrusel) y un texto una sola vez, y los
+publica a **todas las cuentas que marques** (tus Instagram, Facebook y
+TikTok conectados), cada una de forma independiente:
+
+- Se crea una fila de `content_calendar` por cuenta destino, todas
+  agrupadas por `post_group_id`. Si una red falla, las demás no se ven
+  afectadas — el panel muestra el estado de cada una por separado.
+- Cada fila se publica con el mismo `startPublish`/`pollPublishStatus`
+  de siempre (una cuenta por invocación, sigue cabiendo en el timeout de
+  Vercel Hobby), disparadas todas en paralelo desde el navegador.
+- **Carrusel** (2+ imágenes, máx. 10): Instagram arma un container
+  `CAROUSEL` con un child container por imagen; Facebook sube cada foto
+  sin publicar (`published=false`) y las adjunta a un post con
+  `attached_media`; TikTok usa el modo foto de la Content Posting API
+  (mismo flujo de borrador/inbox que el video). Un carrusel es siempre
+  de imágenes — no se puede mezclar con video.
+- El panel de edición de una sola pieza (click en "Publicar" sobre una
+  pieza del calendario) sigue funcionando igual que antes para publicar
+  a **una** cuenta con **un** archivo — el fan-out es un flujo aparte,
+  no un reemplazo.
+
+⚠️ El modo foto de TikTok (`media_type: "PHOTO"` en la Content Posting
+API) está implementado según la documentación pública, pero **no se probó
+contra una cuenta real** — mismo caveat que el resto de la integración de
+TikTok en este proyecto. Verificalo contra la documentación viva antes de
+depender de él en producción.
+
 ## Estructura del proyecto
 
 ```
@@ -216,25 +274,38 @@ src/
 │   ├── (dashboard)/             # shell con sidebar + rutas del dashboard
 │   │   ├── settings/accounts/   # gestión de negocios y cuentas conectadas
 │   │   ├── content/             # galería + detalle de contenido
-│   │   └── recommendations/     # motor de recomendaciones
+│   │   ├── analytics/           # heatmap de horario, formato, comparador de cuentas
+│   │   ├── comments/            # bandeja centralizada de comentarios
+│   │   ├── calendar/            # calendario, publicación y fan-out multi-red
+│   │   ├── recommendations/     # motor de recomendaciones
+│   │   ├── reports/             # reportes semanales por plantilla
+│   │   └── whatsapp/            # bandeja de WhatsApp Cloud API
 │   └── api/
-│       ├── auth/meta/start/     # inicia OAuth de Meta
-│       ├── auth/callback/meta/  # recibe el callback de Meta
-│       └── sync/                # sync de métricas (+ /accounts para listar)
+│       ├── auth/{meta,tiktok}/start/      # inicia OAuth
+│       ├── auth/callback/{meta,tiktok}/   # recibe el callback
+│       ├── sync/                # sync de métricas (+ /accounts para listar)
+│       ├── reports/weekly/      # genera los reportes semanales (cron)
+│       ├── webhooks/whatsapp/   # webhook de WhatsApp Cloud API
+│       └── media/[...path]/     # proxy de dominio verificado para TikTok
 ├── components/
 │   ├── ui/                      # primitivos de UI
 │   ├── charts/                  # wrappers de Recharts con el theme del proyecto
 │   └── dashboard/                # componentes del dashboard
 ├── lib/
-│   ├── supabase/                # clientes server/browser/admin
+│   ├── supabase/                # clientes server/browser/admin + storage
 │   ├── meta/                    # llamadas crudas a la Graph API (oauth, IG, FB)
-│   ├── platforms/                # interfaz PlatformProvider (instagram/facebook, extensible a TikTok)
-│   ├── analytics/                # agregaciones (engagement, overview, recomendaciones)
-│   ├── anthropic/                # integración con la API de Claude
+│   ├── tiktok/                  # llamadas crudas a la API de TikTok
+│   ├── whatsapp/                # WhatsApp Cloud API (envío, ventana de 24h, queries)
+│   ├── platforms/                # interfaz PlatformProvider (instagram/facebook/tiktok)
+│   ├── analytics/                # agregaciones (engagement, queries, recomendaciones,
+│   │                             # clasificación de comentarios, alertas, reporte semanal)
+│   ├── anthropic/                # integración con la API de Claude (opcional)
 │   └── crypto.ts                # cifrado AES-256-GCM de tokens
 └── types/db.ts                  # tipos de la base de datos
-supabase/migrations/0001_init.sql
-.github/workflows/sync.yml
+supabase/migrations/               # 0001 a 0013, numeradas y secuenciales
+.github/workflows/
+├── sync.yml                     # sync de métricas/historias/comentarios
+└── weekly-report.yml            # reportes semanales (lunes)
 ```
 
 ## Notas de diseño
@@ -242,10 +313,11 @@ supabase/migrations/0001_init.sql
 - **Multi-negocio**: `brands` agrupa cuentas; cada `account` pertenece a un
   negocio y a una red (`platform`). Filtrar "por negocio" = filtrar por
   `brand_id`; filtrar "por red" = filtrar por `platform`.
-- **Extensible a TikTok**: agregar una red nueva no toca el esquema — solo
-  se conectan cuentas con `platform='tiktok'` y se implementa
-  `PlatformProvider` en `src/lib/platforms/tiktok.ts`, registrándolo en
-  `src/lib/platforms/index.ts`.
+- **Extensible por red**: agregar una red nueva no toca el esquema — solo
+  se conectan cuentas con el `platform` correspondiente y se implementa
+  `PlatformProvider` (ver `src/lib/platforms/{instagram,facebook,tiktok}.ts`
+  como ejemplo), registrándolo en `src/lib/platforms/index.ts`. Las 3 redes
+  actuales ya siguen este patrón.
 - **Contenido con historial**: cada pieza (`content`) tiene snapshots de
   métricas con fecha (`content_metrics`), nunca se sobreescriben — así se
   puede graficar la evolución en el tiempo de cualquier post/reel/historia.
