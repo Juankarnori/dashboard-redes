@@ -169,6 +169,44 @@ El botón:
 Sin contenido sincronizado con métricas, no hay suficiente data para
 calcular nada — el mensaje vacío te lo recuerda.
 
+## 6. WhatsApp (Fase 5)
+
+Bandeja en `/whatsapp` para leer y responder mensajes de WhatsApp Cloud
+API a mano — **sin auto-respuesta** en esta fase.
+
+**Costo**: recibir mensajes y responder dentro de la ventana de servicio
+de 24h (desde el último mensaje que te escribió el contacto) es gratis e
+ilimitado. Solo cuestan las plantillas de marketing/proactivas, que acá
+no se usan — este flujo es 100% gratis.
+
+### Setup en Meta
+
+1. En tu App de Meta for Developers, agregá el producto **WhatsApp**.
+2. En **API Setup** conseguís `WHATSAPP_PHONE_NUMBER_ID` y podés probar
+   con el número de prueba que da Meta (o agregar tu número de negocio
+   verificado más adelante).
+3. **WhatsApp Business Account ID** (`WHATSAPP_BUSINESS_ACCOUNT_ID`) está
+   en la misma pantalla.
+4. Generá un **token permanente**: Meta Business Suite → System Users →
+   creá un System User → asignale el permiso `whatsapp_business_messaging`
+   sobre tu WhatsApp Business Account → generá el token desde ahí (el
+   token temporal de la consola de desarrollo expira en 24h, no sirve
+   para producción).
+5. Configurá el **Webhook** (WhatsApp → Configuration):
+   - Callback URL: `<NEXT_PUBLIC_APP_URL>/api/webhooks/whatsapp`
+   - Verify token: cualquier string que elijas — ponelo también en
+     `WHATSAPP_WEBHOOK_VERIFY_TOKEN`.
+   - Suscribite al campo `messages`.
+6. Completá las 4 variables en `.env.local` (y en Vercel para producción).
+
+### Límites de esta fase
+
+- Los estados de WhatsApp (historias) no se publican por API.
+- Difusión masiva o mensajes fuera de la ventana de 24h requieren
+  plantillas pre-aprobadas, que son de pago — queda fuera de alcance a
+  propósito.
+- Sin auto-respuesta: cada mensaje se responde a mano desde `/whatsapp`.
+
 ## Estructura del proyecto
 
 ```

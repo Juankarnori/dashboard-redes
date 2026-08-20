@@ -569,6 +569,58 @@ export interface Database {
           },
         ];
       };
+      whatsapp_conversations: {
+        Row: {
+          id: string;
+          owner_id: string;
+          contact_wa_id: string;
+          contact_name: string | null;
+          last_message_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          contact_wa_id: string;
+          contact_name?: string | null;
+          last_message_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["whatsapp_conversations"]["Insert"]>;
+        Relationships: [];
+      };
+      whatsapp_messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          wa_message_id: string | null;
+          direction: "in" | "out";
+          body: string | null;
+          msg_type: string;
+          status: string | null;
+          sent_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          wa_message_id?: string | null;
+          direction: "in" | "out";
+          body?: string | null;
+          msg_type?: string;
+          status?: string | null;
+          sent_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["whatsapp_messages"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_messages_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "whatsapp_conversations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

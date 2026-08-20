@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/content", label: "Contenido" },
   { href: "/analytics", label: "Análisis" },
   { href: "/comments", label: "Comentarios" },
+  { href: "/whatsapp", label: "WhatsApp" },
   { href: "/calendar", label: "Calendario" },
   { href: "/recommendations", label: "Recomendaciones" },
   { href: "/reports", label: "Reportes" },
