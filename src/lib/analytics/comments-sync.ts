@@ -4,6 +4,7 @@ import type { PlatformProvider, ProviderAccount, ProviderComment } from "@/lib/p
 import { decryptToken } from "@/lib/crypto";
 import { getProvider } from "@/lib/platforms";
 import { refreshAccountTokenIfNeeded } from "@/lib/platforms/token-refresh";
+import { classifyComment } from "@/lib/analytics/comment-classify";
 
 type DB = SupabaseClient<Database>;
 
@@ -78,7 +79,47 @@ export async function syncCommentsForAccount(
       console.error(`[comments-sync] No se pudieron sincronizar comentarios de content ${content.id}:`, err);
     }
   }
+
+  // Clasificación por reglas (sentimiento + intent_score) de lo que quedó
+  // sin clasificar — solo CPU, sin red, cabe sobrado en el timeout.
+  await classifyPendingComments(supabase);
+
   return synced;
+}
+
+/**
+ * Clasifica (sentimiento + intent_score, ver `comment-classify.ts`) los
+ * comentarios que todavía no tienen `classified_at`. No incluye nuestras
+ * propias respuestas (is_business_reply=true). No fatal por fila.
+ */
+async function classifyPendingComments(supabase: DB, limit = 500): Promise<number> {
+  const { data: pending, error } = await supabase
+    .from("comments")
+    .select("id, text")
+    .eq("is_business_reply", false)
+    .is("classified_at", null)
+    .limit(limit);
+
+  if (error) {
+    console.error("[comments-sync] Error consultando comentarios sin clasificar:", error);
+    return 0;
+  }
+  if (!pending || pending.length === 0) return 0;
+
+  let classified = 0;
+  for (const row of pending) {
+    const { sentiment, score } = classifyComment(row.text);
+    const { error: updateError } = await supabase
+      .from("comments")
+      .update({ sentiment, intent_score: score, classified_at: new Date().toISOString() })
+      .eq("id", row.id);
+    if (updateError) {
+      console.error(`[comments-sync] No se pudo clasificar comentario ${row.id}:`, updateError);
+      continue;
+    }
+    classified++;
+  }
+  return classified;
 }
 
 /**

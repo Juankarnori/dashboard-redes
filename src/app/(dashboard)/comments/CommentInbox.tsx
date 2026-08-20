@@ -7,10 +7,13 @@ import { replyToComment, refreshCommentsNow } from "@/lib/analytics/comment-acti
 import { REPLY_TEMPLATE } from "@/components/dashboard/ReplyForm";
 import { Button } from "@/components/ui/Button";
 import type { CommentInboxItem } from "@/lib/analytics/queries";
+import type { CommentSentiment } from "@/types/db";
 import { CommentInboxRow } from "./CommentInboxRow";
 import { BulkReplyModal } from "./BulkReplyModal";
+import { SENTIMENT_FILTERS, SENTIMENT_PRIORITY } from "./constants";
 
 type Tab = "pending" | "all";
+type SentimentFilter = CommentSentiment | "all";
 
 export interface BulkState {
   phase: "confirm" | "running" | "done";
@@ -24,6 +27,7 @@ export function CommentInbox({ comments: initialComments }: { comments: CommentI
   const router = useRouter();
   const [comments, setComments] = useState(initialComments);
   const [tab, setTab] = useState<Tab>("pending");
+  const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkState, setBulkState] = useState<BulkState | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -59,7 +63,15 @@ export function CommentInbox({ comments: initialComments }: { comments: CommentI
   const cancelRequestedRef = useRef(false);
 
   const pendingComments = comments.filter((c) => !c.replied);
-  const visible = tab === "pending" ? pendingComments : comments;
+  const baseList = tab === "pending" ? pendingComments : comments;
+  const filtered =
+    sentimentFilter === "all" ? baseList : baseList.filter((c) => c.sentiment === sentimentFilter);
+  // Sort estable: preserva el orden por fecha que ya viene de la query,
+  // pero antepone leads y después negativos (quejas) — "priorizar ventas
+  // y quejas" sin perder el resto del orden cronológico.
+  const visible = [...filtered].sort(
+    (a, b) => priorityOf(a.sentiment) - priorityOf(b.sentiment)
+  );
 
   function handleReplied(commentId: string) {
     setComments((prev) => prev.map((c) => (c.id === commentId ? { ...c, replied: true } : c)));
@@ -85,10 +97,13 @@ export function CommentInbox({ comments: initialComments }: { comments: CommentI
     });
   }
 
+  // Selecciona sobre `visible` (respeta el filtro de sentimiento activo):
+  // si filtraste a "Leads", "seleccionar todos" selecciona esos leads, no
+  // todos los pendientes sin filtrar.
   function toggleSelectAllPending() {
     setSelectedIds((prev) => {
-      const allSelected = pendingComments.length > 0 && pendingComments.every((c) => prev.has(c.id));
-      return allSelected ? new Set() : new Set(pendingComments.map((c) => c.id));
+      const allSelected = visible.length > 0 && visible.every((c) => prev.has(c.id));
+      return allSelected ? new Set() : new Set(visible.map((c) => c.id));
     });
   }
 
@@ -130,7 +145,7 @@ export function CommentInbox({ comments: initialComments }: { comments: CommentI
     setBulkState((prev) => (prev ? { ...prev, phase: "done" } : prev));
   }
 
-  const allPendingSelected = pendingComments.length > 0 && pendingComments.every((c) => selectedIds.has(c.id));
+  const allPendingSelected = visible.length > 0 && visible.every((c) => selectedIds.has(c.id));
 
   return (
     <div className="flex flex-col gap-4">
@@ -157,6 +172,24 @@ export function CommentInbox({ comments: initialComments }: { comments: CommentI
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-1.5">
+        {SENTIMENT_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            type="button"
+            onClick={() => setSentimentFilter(f.value)}
+            className={cn(
+              "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+              sentimentFilter === f.value
+                ? "border-accent bg-accent-soft text-accent-strong"
+                : "border-border bg-surface-1 text-ink-600 hover:text-ink-900"
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {tab === "pending" && pendingComments.length > 0 && (
         <label className="flex w-fit items-center gap-2 text-xs font-medium text-ink-600">
           <input
@@ -171,7 +204,11 @@ export function CommentInbox({ comments: initialComments }: { comments: CommentI
 
       {visible.length === 0 ? (
         <div className="rounded-[--radius-card] border border-dashed border-border bg-surface-1 px-8 py-16 text-center text-sm text-ink-600">
-          {tab === "pending" ? "No hay comentarios pendientes." : "Todavía no hay comentarios sincronizados."}
+          {baseList.length > 0
+            ? "Ningún comentario coincide con este filtro."
+            : tab === "pending"
+              ? "No hay comentarios pendientes."
+              : "Todavía no hay comentarios sincronizados."}
         </div>
       ) : (
         <div className="flex flex-col gap-3">
@@ -198,6 +235,10 @@ export function CommentInbox({ comments: initialComments }: { comments: CommentI
       )}
     </div>
   );
+}
+
+function priorityOf(sentiment: CommentSentiment | null): number {
+  return sentiment ? SENTIMENT_PRIORITY[sentiment] : SENTIMENT_PRIORITY.neutral;
 }
 
 function TabButton({

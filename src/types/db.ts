@@ -16,6 +16,7 @@ export type AccountStatus = "active" | "expired" | "revoked";
 export type RecommendationStatus = "pending" | "in_progress" | "published";
 export type AlertType = "engagement_drop" | "no_posts_streak";
 export type AlertSeverity = "warning" | "info";
+export type CommentSentiment = "positive" | "negative" | "question" | "spam" | "lead" | "neutral";
 
 export interface Database {
   public: {
@@ -492,6 +493,9 @@ export interface Database {
           replied: boolean;
           is_business_reply: boolean;
           synced_at: string;
+          sentiment: CommentSentiment | null;
+          intent_score: number;
+          classified_at: string | null;
         };
         Insert: {
           id?: string;
@@ -506,6 +510,9 @@ export interface Database {
           replied?: boolean;
           is_business_reply?: boolean;
           synced_at?: string;
+          sentiment?: CommentSentiment | null;
+          intent_score?: number;
+          classified_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["comments"]["Insert"]>;
         Relationships: [

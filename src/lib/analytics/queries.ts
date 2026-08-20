@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database, Platform } from "@/types/db";
+import type { Database, Platform, CommentSentiment } from "@/types/db";
 import { engagementRate, latestByContentId, latestByAccountId, followerSeriesByDay } from "./engagement";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -257,6 +257,8 @@ export interface CommentInboxItem {
   text: string;
   commented_at: string | null;
   replied: boolean;
+  sentiment: CommentSentiment | null;
+  intent_score: number;
   content: {
     id: string;
     thumbnail_url: string | null;
@@ -282,7 +284,9 @@ export async function getCommentsInbox(supabase: DB, filters: OverviewFilters): 
 
   const { data } = await supabase
     .from("comments")
-    .select("id, author_name, text, commented_at, replied, content:content_id(id, thumbnail_url, permalink, caption, account_id)")
+    .select(
+      "id, author_name, text, commented_at, replied, sentiment, intent_score, content:content_id(id, thumbnail_url, permalink, caption, account_id)"
+    )
     .is("parent_comment_id", null)
     .eq("is_business_reply", false)
     .order("commented_at", { ascending: false });
@@ -293,6 +297,8 @@ export async function getCommentsInbox(supabase: DB, filters: OverviewFilters): 
     text: string;
     commented_at: string | null;
     replied: boolean;
+    sentiment: CommentSentiment | null;
+    intent_score: number;
     content: { id: string; thumbnail_url: string | null; permalink: string | null; caption: string | null; account_id: string };
   }[];
 
@@ -307,6 +313,8 @@ export async function getCommentsInbox(supabase: DB, filters: OverviewFilters): 
       text: row.text,
       commented_at: row.commented_at,
       replied: row.replied,
+      sentiment: row.sentiment,
+      intent_score: row.intent_score,
       content: {
         id: row.content.id,
         thumbnail_url: row.content.thumbnail_url,

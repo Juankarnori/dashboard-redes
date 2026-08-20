@@ -1,8 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 import { PlatformBadge } from "@/components/dashboard/PlatformBadge";
 import { ReplyForm } from "@/components/dashboard/ReplyForm";
 import type { CommentInboxItem } from "@/lib/analytics/queries";
+import { SENTIMENT_LABELS, SENTIMENT_BADGE_CLASSES } from "./constants";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "";
@@ -55,6 +57,16 @@ export function CommentInboxRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <PlatformBadge platform={comment.platform} />
+          {comment.sentiment && comment.sentiment !== "neutral" && (
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
+                SENTIMENT_BADGE_CLASSES[comment.sentiment]
+              )}
+            >
+              {SENTIMENT_LABELS[comment.sentiment]}
+            </span>
+          )}
           {comment.brand && (
             <span className="inline-flex items-center gap-1.5 text-xs text-ink-600">
               <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: comment.brand.color }} />
