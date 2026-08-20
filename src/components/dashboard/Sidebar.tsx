@@ -10,6 +10,7 @@ import { signOut } from "@/app/(dashboard)/actions";
 const NAV_ITEMS = [
   { href: "/", label: "Resumen" },
   { href: "/content", label: "Contenido" },
+  { href: "/analytics", label: "Análisis" },
   { href: "/comments", label: "Comentarios" },
   { href: "/calendar", label: "Calendario" },
   { href: "/recommendations", label: "Recomendaciones" },

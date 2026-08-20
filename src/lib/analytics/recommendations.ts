@@ -9,7 +9,7 @@ export interface ContentForAnalysis {
   latestMetrics: ContentMetricsRow | null;
 }
 
-const DAY_LABELS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+export const DAY_LABELS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
 export interface BestTimeSlot {
   dayOfWeek: number;

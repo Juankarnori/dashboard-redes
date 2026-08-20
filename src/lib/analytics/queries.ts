@@ -21,7 +21,7 @@ export interface ContentWithLatestMetrics extends ContentRow {
   engagementRate: number | null;
 }
 
-async function getFilteredAccounts(supabase: DB, filters: OverviewFilters) {
+export async function getFilteredAccounts(supabase: DB, filters: OverviewFilters) {
   let query = supabase.from("accounts").select("*, brands(name, color)").eq("status", "active");
   if (filters.brandId) query = query.eq("brand_id", filters.brandId);
   if (filters.platform) query = query.eq("platform", filters.platform);
@@ -156,6 +156,104 @@ export async function getContentForAnalysis(supabase: DB, accountIds: string[]) 
     const latest = latestByContentId(metricsRows.map((m) => ({ ...m, content_id: c.id }))).get(c.id);
     return { content: c as ContentRow, latestMetrics: latest ?? null };
   });
+}
+
+export interface AccountComparisonStat {
+  accountId: string;
+  label: string;
+  platform: Platform;
+  brand: { name: string; color: string } | null;
+  avgEngagementRate: number | null; // null = sin contenido con métricas medibles todavía
+  contentCount: number;
+  followers: number | null;
+}
+
+export interface PlatformComparisonGroup {
+  platform: Platform;
+  accounts: AccountComparisonStat[];
+}
+
+/**
+ * Comparativa lado a lado de las cuentas del dueño, agrupadas por red
+ * (ej. las 2 cuentas de Instagram, las 2 de Facebook). Misma fórmula de
+ * engagement que el resto del dashboard (`engagementRate` en
+ * engagement.ts) — no inventa un cálculo nuevo.
+ */
+export async function getAccountComparison(
+  supabase: DB,
+  filters: OverviewFilters
+): Promise<PlatformComparisonGroup[]> {
+  const accounts = await getFilteredAccounts(supabase, filters);
+  if (accounts.length === 0) return [];
+
+  const accountIds = accounts.map((a) => a.id);
+
+  const [{ data: contentRows }, { data: audienceRows }] = await Promise.all([
+    supabase
+      .from("content")
+      .select("account_id, content_metrics(*)")
+      .in("account_id", accountIds)
+      .order("published_at", { ascending: false })
+      .limit(600),
+    supabase
+      .from("audience_snapshot")
+      .select("*")
+      .in("account_id", accountIds)
+      .order("captured_at", { ascending: false }),
+  ]);
+
+  const latestAudience = latestByAccountId(audienceRows ?? []);
+
+  const byAccount = new Map<string, { sum: number; count: number; total: number }>();
+  for (const row of (contentRows ?? []) as unknown as {
+    account_id: string;
+    content_metrics: ContentMetricsRow[];
+  }[]) {
+    const bucket = byAccount.get(row.account_id) ?? { sum: 0, count: 0, total: 0 };
+    bucket.total += 1;
+
+    // Snapshot más reciente de esta pieza (por captured_at) — mismo criterio
+    // que latestByContentId, aplicado acá directo porque no traemos el id
+    // de content (no hace falta para el promedio por cuenta).
+    const latestMetrics = row.content_metrics.reduce<ContentMetricsRow | null>((latest, m) => {
+      if (!latest || new Date(m.captured_at) > new Date(latest.captured_at)) return m;
+      return latest;
+    }, null);
+
+    const rate = latestMetrics ? engagementRate(latestMetrics) : null;
+    if (rate !== null) {
+      bucket.sum += rate;
+      bucket.count += 1;
+    }
+    byAccount.set(row.account_id, bucket);
+  }
+
+  const stats: AccountComparisonStat[] = accounts.map((a) => {
+    const bucket = byAccount.get(a.id);
+    return {
+      accountId: a.id,
+      label: a.display_name ?? a.username ?? a.platform,
+      platform: a.platform,
+      brand: (a as unknown as { brands: { name: string; color: string } | null }).brands,
+      avgEngagementRate: bucket && bucket.count > 0 ? bucket.sum / bucket.count : null,
+      contentCount: bucket?.total ?? 0,
+      followers: latestAudience.get(a.id)?.followers ?? null,
+    };
+  });
+
+  const byPlatform = new Map<Platform, AccountComparisonStat[]>();
+  for (const stat of stats) {
+    const group = byPlatform.get(stat.platform) ?? [];
+    group.push(stat);
+    byPlatform.set(stat.platform, group);
+  }
+
+  return Array.from(byPlatform.entries())
+    .map(([platform, groupAccounts]) => ({
+      platform,
+      accounts: groupAccounts.sort((a, b) => (b.avgEngagementRate ?? -1) - (a.avgEngagementRate ?? -1)),
+    }))
+    .sort((a, b) => a.platform.localeCompare(b.platform));
 }
 
 export interface AlertInputs {
