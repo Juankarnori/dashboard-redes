@@ -42,9 +42,38 @@ jobs:
       - name: Listar cuentas activas
         id: accounts
         run: |
-          response=$(curl -sf -H "Authorization: Bearer $SYNC_CRON_SECRET" \
+          # Sin -f: queremos inspeccionar el body y el status a mano en
+          # vez de dejar que curl aborte solo. Antes, una respuesta sin
+          # la forma {accounts:[...]} (401 por secret mal puesto, HTML de
+          # error, etc.) hacía que `jq '.accounts[].id'` tirara un error
+          # de runtime al intentar iterar sobre algo que no es un arreglo
+          # — con `set -eo pipefail` (default de los steps de GH Actions)
+          # eso tumbaba el job entero con un críptico "exit code 5" en vez
+          # de un mensaje claro. Ahora se valida cada paso por separado.
+          set +e
+          http_code=$(curl -s -o body.json -w "%{http_code}" \
+            -H "Authorization: Bearer $SYNC_CRON_SECRET" \
             "$APP_URL/api/sync/accounts")
-          echo "$response" | jq -c '.accounts[].id' > account_ids.txt
+          curl_exit=$?
+          set -e
+
+          if [ "$curl_exit" -ne 0 ]; then
+            echo "::error::curl falló al llamar a /api/sync/accounts (exit $curl_exit) — revisá que APP_URL sea correcto y alcanzable."
+            exit 1
+          fi
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::/api/sync/accounts devolvió HTTP $http_code (revisá SYNC_CRON_SECRET/APP_URL en los secrets del repo). Body:"
+            cat body.json
+            exit 1
+          fi
+          if ! jq -e '.accounts' body.json > /dev/null 2>&1; then
+            echo "::error::La respuesta de /api/sync/accounts no tiene la forma esperada {accounts:[...]}. Body:"
+            cat body.json
+            exit 1
+          fi
+
+          jq -c '.accounts[].id' body.json > account_ids.txt
+          echo "Cuentas activas: $(wc -l < account_ids.txt)"
           cat account_ids.txt
 
       - name: Sincronizar cada cuenta (una llamada por cuenta)
