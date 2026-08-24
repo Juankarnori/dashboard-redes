@@ -6,6 +6,7 @@ import { getProvider } from "@/lib/platforms";
 import { recomputeAccountAlerts } from "@/lib/analytics/alerts";
 import { syncCommentsForAccount } from "@/lib/analytics/comments-sync";
 import { refreshAccountTokenIfNeeded } from "@/lib/platforms/token-refresh";
+import { cacheRemoteThumbnail, isCachedThumbnailUrl } from "@/lib/supabase/storage";
 import type { ProviderContentItem } from "@/lib/platforms/types";
 
 type SyncScope = "all" | "stories" | "comments";
@@ -95,8 +96,40 @@ export async function POST(request: NextRequest) {
       items = await provider.fetchContent(providerAccount);
     }
 
+    // TikTok: cover_image_url es una URL firmada que expira a los pocos
+    // días — cacheamos nuestra propia copia en Supabase Storage la
+    // primera vez que vemos cada pieza. Prefetch de lo ya guardado para
+    // no volver a descargar/subir en cada sync (ver isCachedThumbnailUrl).
+    const existingThumbnails = new Map<string, string | null>();
+    if (account.platform === "tiktok" && items.length > 0) {
+      const { data: existingRows } = await supabase
+        .from("content")
+        .select("external_id, thumbnail_url")
+        .eq("account_id", account.id);
+      for (const row of existingRows ?? []) {
+        existingThumbnails.set(row.external_id, row.thumbnail_url);
+      }
+    }
+
     let synced = 0;
     for (const item of items) {
+      let thumbnailUrl = item.thumbnailUrl ?? null;
+      if (account.platform === "tiktok" && thumbnailUrl) {
+        const existing = existingThumbnails.get(item.externalId);
+        if (existing && isCachedThumbnailUrl(supabase, existing)) {
+          thumbnailUrl = existing; // ya cacheada — no volver a descargar
+        } else {
+          const cached = await cacheRemoteThumbnail(
+            supabase,
+            `${account.id}/${item.externalId}.jpg`,
+            thumbnailUrl
+          );
+          // Si falla el cacheo, seguimos con la URL firmada de TikTok tal
+          // cual (va a expirar más adelante, pero es mejor que nada ahora).
+          if (cached) thumbnailUrl = cached;
+        }
+      }
+
       const { data: content, error: contentError } = await supabase
         .from("content")
         .upsert(
@@ -106,7 +139,7 @@ export async function POST(request: NextRequest) {
             type: item.type,
             caption: item.caption ?? null,
             media_url: item.mediaUrl ?? null,
-            thumbnail_url: item.thumbnailUrl ?? null,
+            thumbnail_url: thumbnailUrl,
             permalink: item.permalink ?? null,
             published_at: item.publishedAt ?? null,
             expires_at: item.expiresAt ?? null,

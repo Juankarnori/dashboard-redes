@@ -265,6 +265,44 @@ contra una cuenta real** — mismo caveat que el resto de la integración de
 TikTok en este proyecto. Verificalo contra la documentación viva antes de
 depender de él en producción.
 
+## Limitaciones conocidas de TikTok
+
+Dos cosas que **no son bugs de este código**, sino límites reales del
+acceso actual a la API de TikTok (Login Kit + Content Posting API, scopes
+`user.info.profile`, `user.info.stats`, `video.list`):
+
+- **Sin comentarios de terceros**: no existe ningún scope en el listado
+  oficial de OAuth scopes de TikTok for Developers para leer comentarios
+  de un video (verificado contra la documentación viva al momento de este
+  fix). Lo más cercano es la Research API (`research.data.*`), que es un
+  programa aparte con aprobación separada para investigadores, no algo
+  que se habilite en un Login Kit normal. `tiktokProvider.fetchComments`
+  queda sin implementar a propósito — la UI (`/comments` con filtro
+  TikTok, y el detalle de contenido de una pieza de TikTok) avisa esto en
+  vez de mostrar una bandeja vacía sin explicación.
+- **Sin video reproducible**: `video.list` (Display API) solo devuelve
+  `cover_image_url` (portada) y `share_url` (permalink a la app de
+  TikTok) — no hay una URL de archivo de video descargable/embebible con
+  estos scopes. El dashboard en general tampoco reproduce video de
+  ninguna red (solo miniatura + link "Ver original"), así que esto es
+  consistente con Instagram/Facebook, pero en TikTok es más notorio
+  porque no hay alternativa de reproducir inline en absoluto.
+  - Además, `cover_image_url` es una URL firmada por TikTok que **expira
+    a los pocos días** — por eso el sync ahora la descarga y la sube a
+    Supabase Storage al momento de sincronizar (ver
+    `cacheRemoteThumbnail` en `src/lib/supabase/storage.ts`, llamado desde
+    `src/app/api/sync/route.ts`), guardando
+    esa copia estable en `thumbnail_url` en vez de la URL firmada. Si el
+    caching falla (por la razón que sea), cae de vuelta a la URL de
+    TikTok tal cual — mejor una miniatura que puede expirar más adelante
+    que ninguna.
+
+Si en el futuro TikTok aprueba un producto/scope con acceso a comentarios
+o a un archivo de video real, `fetchComments`/`mediaUrl` en
+`src/lib/platforms/tiktok.ts` son los puntos de extensión — seguí el
+mismo contrato (`ProviderComment[]`, `ProviderContentItem.mediaUrl`) que
+usan Instagram y Facebook.
+
 ## Estructura del proyecto
 
 ```

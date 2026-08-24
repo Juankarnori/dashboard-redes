@@ -1,10 +1,10 @@
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { ContentTypeBadge } from "@/components/dashboard/ContentTypeBadge";
 import { PlatformBadge } from "@/components/dashboard/PlatformBadge";
 import { StatTile } from "@/components/dashboard/StatTile";
+import { ThumbnailImage } from "@/components/dashboard/ThumbnailImage";
 import { MetricEvolutionChart } from "@/components/charts/MetricEvolutionChart";
 import { getContentDetail, getContentComments } from "@/lib/analytics/queries";
 import { CommentsPanel } from "./CommentsPanel";
@@ -49,19 +49,11 @@ export default async function ContentDetailPage({
       <div className="grid grid-cols-1 gap-6 px-4 py-6 sm:px-8 lg:grid-cols-[280px_1fr]">
         <div>
           <div className="relative aspect-square overflow-hidden rounded-[--radius-card] border border-border bg-surface-2">
-            {content.thumbnail_url ? (
-              <Image
-                src={content.thumbnail_url}
-                alt={content.caption ?? "Contenido"}
-                fill
-                unoptimized
-                className="object-cover"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-xs text-ink-400">
-                Sin miniatura
-              </div>
-            )}
+            <ThumbnailImage
+              src={content.thumbnail_url}
+              alt={content.caption ?? "Contenido"}
+              className="object-cover"
+            />
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <ContentTypeBadge type={content.type} />
@@ -79,16 +71,30 @@ export default async function ContentDetailPage({
           {content.caption && (
             <p className="mt-3 text-sm text-ink-600">{content.caption}</p>
           )}
-          {content.permalink && (
-            <a
-              href={content.permalink}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 inline-block text-xs font-medium text-accent hover:underline"
-            >
-              Ver original →
-            </a>
-          )}
+          {content.permalink &&
+            (account?.platform === "tiktok" ? (
+              // TikTok no tiene video reproducible acá (ver "Limitaciones
+              // conocidas de TikTok" en el README) — este es el único
+              // lugar donde se puede ver/reproducir la pieza, así que va
+              // más prominente que el link discreto de las otras redes.
+              <a
+                href={content.permalink}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-flex h-9 items-center justify-center rounded-[0.55rem] bg-accent px-4 text-sm font-medium text-white transition-colors hover:bg-accent-strong"
+              >
+                Ver video en TikTok →
+              </a>
+            ) : (
+              <a
+                href={content.permalink}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-block text-xs font-medium text-accent hover:underline"
+              >
+                Ver original →
+              </a>
+            ))}
         </div>
 
         <div className="flex flex-col gap-6">
@@ -135,7 +141,28 @@ export default async function ContentDetailPage({
 
           <div>
             <h3 className="mb-3 text-sm font-semibold text-ink-900">Comentarios</h3>
-            <CommentsPanel comments={comments} />
+            {account?.platform === "tiktok" ? (
+              <div className="rounded-[--radius-card] border border-dashed border-border bg-surface-1 px-4 py-4 text-sm text-ink-600">
+                TikTok no expone comentarios de terceros con el acceso actual a su API (Login
+                Kit / Content Posting API no incluyen un scope de comentarios) — no es algo que
+                podamos traer desde acá.
+                {content.permalink && (
+                  <>
+                    {" "}
+                    <a
+                      href={content.permalink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-accent hover:underline"
+                    >
+                      Respondé directamente en TikTok →
+                    </a>
+                  </>
+                )}
+              </div>
+            ) : (
+              <CommentsPanel comments={comments} />
+            )}
           </div>
         </div>
       </div>

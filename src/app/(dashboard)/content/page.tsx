@@ -1,9 +1,9 @@
-import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import { ContentTypeBadge } from "@/components/dashboard/ContentTypeBadge";
+import { ThumbnailImage } from "@/components/dashboard/ThumbnailImage";
 import { getContentGallery } from "@/lib/analytics/queries";
 import type { Platform } from "@/types/db";
 
@@ -46,19 +46,11 @@ export default async function ContentGalleryPage({
                 className="group overflow-hidden rounded-[--radius-card] border border-border bg-surface-1 transition-shadow hover:shadow-md"
               >
                 <div className="relative aspect-square bg-surface-2">
-                  {item.thumbnail_url ? (
-                    <Image
-                      src={item.thumbnail_url}
-                      alt={item.caption ?? "Contenido"}
-                      fill
-                      unoptimized
-                      className="object-cover transition-transform group-hover:scale-[1.03]"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-xs text-ink-400">
-                      Sin miniatura
-                    </div>
-                  )}
+                  <ThumbnailImage
+                    src={item.thumbnail_url}
+                    alt={item.caption ?? "Contenido"}
+                    className="object-cover transition-transform group-hover:scale-[1.03]"
+                  />
                   <div className="absolute left-2 top-2">
                     <ContentTypeBadge type={item.type} />
                   </div>
