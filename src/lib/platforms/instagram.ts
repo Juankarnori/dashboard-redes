@@ -25,6 +25,7 @@ function flattenIgComments(comments: IgComment[]): ProviderComment[] {
     flat.push({
       externalId: c.id,
       authorName: c.username,
+      authorPlatformId: c.from?.id,
       text: c.text,
       likeCount: c.like_count,
       commentedAt: c.timestamp,
@@ -34,6 +35,7 @@ function flattenIgComments(comments: IgComment[]): ProviderComment[] {
         externalId: reply.id,
         parentExternalId: c.id,
         authorName: reply.username,
+        authorPlatformId: reply.from?.id,
         text: reply.text,
         likeCount: reply.like_count,
         commentedAt: reply.timestamp,

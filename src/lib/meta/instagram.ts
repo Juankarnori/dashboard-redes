@@ -157,6 +157,12 @@ export interface IgComment {
   username?: string;
   timestamp: string;
   like_count?: number;
+  // Id de IG-scoped user del autor — lo necesitamos para detectar
+  // comentarios/respuestas del propio negocio (ver flattenIgComments en
+  // platforms/instagram.ts). Documentado por Meta para el objeto comment
+  // de IG, pero no probado contra una cuenta real todavía — mismo
+  // caveat que el resto de los nombres de campo de Graph API acá.
+  from?: { id: string; username?: string };
   replies?: { data: IgComment[] };
 }
 
@@ -174,7 +180,7 @@ interface IgCommentsResponse {
 export async function fetchInstagramComments(mediaId: string, token: string): Promise<IgComment[]> {
   const items: IgComment[] = [];
   let url: string | undefined =
-    `${GRAPH_BASE}/${mediaId}/comments?fields=id,text,username,timestamp,like_count,replies{id,text,username,timestamp,like_count}&limit=50&access_token=${encodeURIComponent(token)}`;
+    `${GRAPH_BASE}/${mediaId}/comments?fields=id,text,username,timestamp,like_count,from,replies{id,text,username,timestamp,like_count,from}&limit=50&access_token=${encodeURIComponent(token)}`;
 
   while (url) {
     // Diagnóstico (2): URL completa (sin el token) que se está llamando.

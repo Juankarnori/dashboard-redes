@@ -74,7 +74,7 @@ export async function syncCommentsForAccount(
         `[comments-sync] provider.fetchComments devolvió ${comments.length} item(s) para external_id=${content.external_id}:`,
         JSON.stringify(comments, null, 2)
       );
-      synced += await syncCommentsForContent(supabase, content.id, comments);
+      synced += await syncCommentsForContent(supabase, content.id, comments, providerAccount.externalId);
     } catch (err) {
       console.error(`[comments-sync] No se pudieron sincronizar comentarios de content ${content.id}:`, err);
     }
@@ -125,14 +125,25 @@ async function classifyPendingComments(supabase: DB, limit = 500): Promise<numbe
 /**
  * Guarda los comentarios de una pieza. Primero los de nivel superior
  * (para tener su id de BD a mano), después las respuestas enlazadas por
- * `parent_comment_id`. El upsert no incluye `replied`/`is_business_reply`
- * a propósito — son estado local nuestro, no algo que Meta nos devuelva,
- * así que no se pisan en corridas posteriores.
+ * `parent_comment_id`.
+ *
+ * `is_business_reply` SÍ se recalcula en cada upsert: a diferencia de
+ * `replied`, es derivable de algo que Meta nos devuelve (el autor del
+ * comentario es la propia cuenta, `authorPlatformId === accountExternalId`)
+ * — así una respuesta hecha en la app de Facebook/Instagram (no desde
+ * este dashboard) también queda marcada como nuestra, en vez de colarse
+ * como si fuera un comentario más de un cliente.
+ *
+ * `replied` del comentario padre NO se upsertea en bloque (eso sí seguiría
+ * siendo pisar estado local sin necesidad) — cuando una respuesta resulta
+ * ser del negocio, se hace un UPDATE puntual sobre el padre. Nunca lo
+ * vuelve a false: si ya estaba respondido (por acá o por Meta), sigue así.
  */
 async function syncCommentsForContent(
   supabase: DB,
   contentId: string,
-  comments: ProviderComment[]
+  comments: ProviderComment[],
+  accountExternalId: string
 ): Promise<number> {
   if (comments.length === 0) return 0;
 
@@ -146,6 +157,7 @@ async function syncCommentsForContent(
   );
 
   for (const c of topLevel) {
+    const isBusinessReply = !!c.authorPlatformId && c.authorPlatformId === accountExternalId;
     const payload = {
       content_id: contentId,
       platform_comment_id: c.externalId,
@@ -154,6 +166,7 @@ async function syncCommentsForContent(
       text: c.text,
       like_count: c.likeCount ?? null,
       commented_at: c.commentedAt ?? null,
+      is_business_reply: isBusinessReply,
     };
     // Diagnóstico (4): si el upsert falla (constraint, tipo de dato,
     // content_id que no resuelve, etc.), esto lo muestra con el payload
@@ -173,6 +186,7 @@ async function syncCommentsForContent(
   }
 
   for (const r of replies) {
+    const isBusinessReply = !!r.authorPlatformId && r.authorPlatformId === accountExternalId;
     const parentId = r.parentExternalId ? idByExternalId.get(r.parentExternalId) : undefined;
     const { error } = await supabase.from("comments").upsert(
       {
@@ -184,6 +198,7 @@ async function syncCommentsForContent(
         text: r.text,
         like_count: r.likeCount ?? null,
         commented_at: r.commentedAt ?? null,
+        is_business_reply: isBusinessReply,
       },
       { onConflict: "content_id,platform_comment_id" }
     );
@@ -192,6 +207,25 @@ async function syncCommentsForContent(
       continue;
     }
     synced++;
+
+    // Respuesta propia detectada en el sync (hecha en la app de Meta, no
+    // desde acá): marca al padre como respondido igual que haría
+    // replyToComment. Busca por platform_comment_id en vez de usar
+    // idByExternalId porque el padre puede venir de una corrida anterior
+    // (no estar en este mismo batch de `topLevel`).
+    if (isBusinessReply && r.parentExternalId) {
+      const { error: parentError } = await supabase
+        .from("comments")
+        .update({ replied: true })
+        .eq("content_id", contentId)
+        .eq("platform_comment_id", r.parentExternalId);
+      if (parentError) {
+        console.error(
+          `[comments-sync] No se pudo marcar como respondido el comentario padre ${r.parentExternalId}:`,
+          parentError
+        );
+      }
+    }
   }
 
   return synced;
