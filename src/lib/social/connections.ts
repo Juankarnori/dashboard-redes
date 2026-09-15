@@ -70,6 +70,22 @@ export async function getOrCreateTikTokAuthConfig(): Promise<string> {
     name: "TikTok (app propia)",
     authScheme: "OAUTH2",
     credentials: { client_id: clientKey, client_secret: clientSecret },
+    // Sin esto, Composio pide el scope completo del toolkit de TikTok al
+    // autorizar — y tu app de TikTok (Login Kit) solo tiene aprobados
+    // user.info.profile/user.info.stats/video.list/video.upload (ver
+    // TIKTOK_OAUTH_SCOPES en lib/tiktok/oauth.ts, la integración
+    // directa). Restringir a los tools que este service layer realmente
+    // usa acota el scope pedido a algo que tu app SÍ tiene aprobado —
+    // encontrado en vivo (la conexión real fallaba con "correct: scope"
+    // en TikTok), no algo documentado que haya podido leer de antemano.
+    toolAccessConfig: {
+      toolsForConnectedAccountCreation: [
+        "TIKTOK_GET_USER_STATS",
+        "TIKTOK_LIST_VIDEOS",
+        "TIKTOK_QUERY_CREATOR_INFO",
+        "TIKTOK_UPLOAD_VIDEO",
+      ],
+    },
   });
   return created.id;
 }
