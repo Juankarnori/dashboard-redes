@@ -1,6 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Platform, CommentSentiment } from "@/types/db";
-import { engagementRate, latestByContentId, latestByAccountId, followerSeriesByDay, postsPerDay } from "./engagement";
+import {
+  engagementRate,
+  latestByContentId,
+  latestByAccountId,
+  followerSeriesByDay,
+  metricSeriesByDay,
+  postsPerDay,
+} from "./engagement";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -483,44 +490,60 @@ export async function getCommentsInbox(supabase: DB, filters: OverviewFilters): 
 export interface KpiTrends {
   followers: { current: number; series: number[] };
   posts7d: { current: number; series: number[] };
+  reach7d: { current: number; series: number[] };
+  interactions7d: { current: number; series: number[] };
 }
 
 /**
- * Fase 2: series cortas para los sparklines de Resumen.
+ * Fase 2: series cortas para los sparklings de Resumen.
  *
- * A propósito NO incluye "Alcance 7d"/"Interacciones 7d" todavía:
- * sumar content_metrics.reach de varios posts NO da un alcance de
- * cuenta válido (cada fila es el alcance acumulado *de ese post*, no
- * un delta diario — es el mismo tipo de error que se acababa de
- * corregir para Instagram, ver getInstagramAccountInsights). Lo
- * correcto es lo que ya hace /settings/composio: pedirle a Meta el
- * total de cuenta ya deduplicado — pero eso todavía no se persiste en
- * ninguna tabla (audience_snapshot solo tiene followers/follows/
- * media_count). Antes de agregar esos dos KPIs hay que decidir si se
- * extiende audience_snapshot para guardarlos en el sync, o se leen en
- * vivo — ver conversación con el dueño.
+ * reach7d.current = suma, por cuenta, del `reach_7d` más reciente (ya
+ * deduplicado por Meta vía metric_type=total_value — ver migración
+ * 0017) — NUNCA una suma de la serie `reach` diaria, que inflaría el
+ * número igual que el bug ya corregido en getInstagramAccountInsights.
+ * La serie del sparkline sí usa `reach` día a día (sumado ACROSS
+ * CUENTAS, válido — audiencias distintas no se pisan), solo para
+ * mostrar la tendencia, no para el total.
+ *
+ * interactions7d.current SÍ es una suma de los últimos 7 días de la
+ * serie diaria — interactions es aditivo (ver nota en la migración
+ * 0017), a diferencia de reach.
  */
 export async function getKpiTrends(supabase: DB, filters: OverviewFilters, days = 14): Promise<KpiTrends> {
   const accounts = await getFilteredAccounts(supabase, filters);
   const accountIds = accounts.map((a) => a.id);
+  const empty = { current: 0, series: [] as number[] };
   if (accountIds.length === 0) {
-    return { followers: { current: 0, series: [] }, posts7d: { current: 0, series: [] } };
+    return { followers: empty, posts7d: empty, reach7d: empty, interactions7d: empty };
   }
 
   const since = new Date(Date.now() - days * DAY_MS).toISOString();
   const [{ data: audienceRows }, { data: contentRows }] = await Promise.all([
     supabase
       .from("audience_snapshot")
-      .select("account_id, captured_at, followers")
+      .select("account_id, captured_at, followers, reach, reach_7d, interactions")
       .in("account_id", accountIds)
       .gte("captured_at", since)
       .order("captured_at", { ascending: true }),
     supabase.from("content").select("published_at").in("account_id", accountIds).gte("published_at", since),
   ]);
 
-  const followerSeries = followerSeriesByDay(audienceRows ?? []);
+  const rows = audienceRows ?? [];
+  const followerSeries = followerSeriesByDay(rows);
   const perDay = postsPerDay(contentRows ?? [], days);
   const posts7d = perDay.slice(-7).reduce((sum, d) => sum + d.count, 0);
+
+  const reachSeries = metricSeriesByDay(rows, "reach");
+  const interactionsSeries = metricSeriesByDay(rows, "interactions");
+  const interactions7d = interactionsSeries.slice(-7).reduce((sum, d) => sum + d.value, 0);
+
+  // reach_7d: último valor por cuenta (no por día — es un rollup que ya
+  // representa "los últimos 7 días desde este snapshot"), sumado entre
+  // cuentas.
+  const latestReach7dByAccount = latestByAccountId(
+    rows.filter((r) => r.reach_7d !== null) as { account_id: string; captured_at: string; reach_7d: number }[]
+  );
+  const reach7dCurrent = Array.from(latestReach7dByAccount.values()).reduce((sum, r) => sum + r.reach_7d, 0);
 
   return {
     followers: {
@@ -530,6 +553,14 @@ export async function getKpiTrends(supabase: DB, filters: OverviewFilters, days 
     posts7d: {
       current: posts7d,
       series: perDay.map((d) => d.count),
+    },
+    reach7d: {
+      current: reach7dCurrent,
+      series: reachSeries.map((d) => d.value),
+    },
+    interactions7d: {
+      current: interactions7d,
+      series: interactionsSeries.map((d) => d.value),
     },
   };
 }

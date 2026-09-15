@@ -51,30 +51,45 @@ export function latestByAccountId<T extends { account_id: string; captured_at: s
   return map;
 }
 
-/** Agrupa snapshots de audiencia por día (YYYY-MM-DD), sumando el último valor de cada cuenta ese día. */
-export function followerSeriesByDay(
-  rows: { account_id: string; captured_at: string; followers: number | null }[]
-): { date: string; followers: number }[] {
-  // último snapshot por (cuenta, día)
-  const perAccountPerDay = new Map<string, { captured_at: string; followers: number | null }>();
+/**
+ * Agrupa snapshots de audiencia por día (YYYY-MM-DD), sumando el último
+ * valor de cada cuenta ese día. Genérico sobre qué campo numérico sumar
+ * (followers, reach, interactions...) — sumar ACROSS CUENTAS el mismo
+ * día es válido siempre (audiencias distintas, no hay doble conteo);
+ * lo que nunca hay que hacer es sumar el mismo campo ACROSS DÍAS de
+ * `reach` (ver reach_7d en la migración 0017) — esta función no hace
+ * eso, solo arma la serie día a día tal cual, cada punto es independiente.
+ */
+export function metricSeriesByDay<K extends string>(
+  rows: ({ account_id: string; captured_at: string } & Record<K, number | null>)[],
+  key: K
+): { date: string; value: number }[] {
+  const perAccountPerDay = new Map<string, { captured_at: string; value: number | null }>();
   for (const row of rows) {
     const day = row.captured_at.slice(0, 10);
-    const key = `${row.account_id}:${day}`;
-    const current = perAccountPerDay.get(key);
+    const mapKey = `${row.account_id}:${day}`;
+    const current = perAccountPerDay.get(mapKey);
     if (!current || new Date(row.captured_at) > new Date(current.captured_at)) {
-      perAccountPerDay.set(key, row);
+      perAccountPerDay.set(mapKey, { captured_at: row.captured_at, value: row[key] });
     }
   }
 
   const totalsByDay = new Map<string, number>();
-  for (const [key, row] of perAccountPerDay) {
-    const day = key.split(":")[1];
-    totalsByDay.set(day, (totalsByDay.get(day) ?? 0) + (row.followers ?? 0));
+  for (const [mapKey, row] of perAccountPerDay) {
+    const day = mapKey.split(":")[1];
+    totalsByDay.set(day, (totalsByDay.get(day) ?? 0) + (row.value ?? 0));
   }
 
   return Array.from(totalsByDay.entries())
-    .map(([date, followers]) => ({ date, followers }))
+    .map(([date, value]) => ({ date, value }))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Agrupa snapshots de audiencia por día (YYYY-MM-DD), sumando el último valor de cada cuenta ese día. */
+export function followerSeriesByDay(
+  rows: { account_id: string; captured_at: string; followers: number | null }[]
+): { date: string; followers: number }[] {
+  return metricSeriesByDay(rows, "followers").map(({ date, value }) => ({ date, followers: value }));
 }
 
 /** Los últimos `days` días como YYYY-MM-DD (hoy incluido), en orden ascendente — para series densas con ceros donde no hay dato. */

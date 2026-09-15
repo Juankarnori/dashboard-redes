@@ -154,13 +154,24 @@ export default async function OverviewPage({
           value={overview.totalFollowers.toLocaleString("es")}
           trend={kpiTrends.followers.series}
         />
-        <StatTile label="Contenido publicado" value={String(overview.totalContent)} />
-        <StatTile label="Engagement promedio" value={pct(overview.avgEngagementRate)} />
+        <StatTile
+          label="Alcance / vistas (7d)"
+          value={kpiTrends.reach7d.current.toLocaleString("es")}
+          trend={kpiTrends.reach7d.series}
+          hint="Instagram: alcance único (cuentas distintas). Facebook: vistas de contenido (Meta ya no expone alcance de Página). TikTok: no disponible con los permisos actuales."
+        />
+        <StatTile
+          label="Interacciones (7d)"
+          value={kpiTrends.interactions7d.current.toLocaleString("es")}
+          trend={kpiTrends.interactions7d.series}
+        />
         <StatTile
           label="Publicaciones (7d)"
           value={String(kpiTrends.posts7d.current)}
           trend={kpiTrends.posts7d.series}
         />
+        <StatTile label="Contenido publicado" value={String(overview.totalContent)} />
+        <StatTile label="Engagement promedio" value={pct(overview.avgEngagementRate)} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 px-4 pb-6 sm:px-8 lg:grid-cols-2">
