@@ -13,7 +13,25 @@ import { Composio } from "@composio/core";
  * 0.18.1). `composio.sessions`/`composio.create` es un patrón distinto
  * (Tool Router / MCP para agentes conversacionales) que no aplica acá:
  * nosotros siempre sabemos de antemano qué tool ejecutar.
+ *
+ * `toolkitVersions`: versiones pinneadas al 2026-09-15 (las más nuevas
+ * disponibles ese día, consultadas en vivo con `composio.toolkits.get(slug)`
+ * — no inventadas). Sin esto, Composio resuelve a "latest" en cada
+ * llamada y exige `dangerouslySkipVersionCheck: true` para no tirar
+ * `ComposioToolVersionRequiredError` (ver Tools.ts, executeComposioTool);
+ * pinnear versiones concretas evita que un toolkit nuevo de Composio
+ * cambie de forma silenciosa la forma de una respuesta que ya
+ * parseamos a mano (ver lib/social/instagram.ts, facebook.ts, tiktok.ts).
+ * Para subir de versión: volver a consultar `toolkits.get(slug)`,
+ * revisar el changelog de esa versión, probar en vivo, recién ahí subir
+ * el string acá.
  */
+const TOOLKIT_VERSIONS: Record<string, string> = {
+  instagram: "20260915_00",
+  facebook: "20260902_00",
+  tiktok: "20260817_00",
+};
+
 let client: Composio | null = null;
 
 export function getComposioClient(): Composio {
@@ -26,6 +44,6 @@ export function getComposioClient(): Composio {
     );
   }
 
-  client = new Composio({ apiKey });
+  client = new Composio({ apiKey, toolkitVersions: TOOLKIT_VERSIONS });
   return client;
 }

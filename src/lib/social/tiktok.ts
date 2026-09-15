@@ -37,7 +37,6 @@ export async function getTikTokProfile(userId: string, connectedAccountId: strin
         "avatar_url",
       ],
     },
-    dangerouslySkipVersionCheck: true,
   });
   if (!result.successful) throw new Error(result.error ?? "TIKTOK_GET_USER_STATS falló");
 
@@ -70,7 +69,6 @@ export async function getTikTokVideos(
     userId,
     connectedAccountId,
     arguments: { max_count: Math.min(limit, 20) }, // 20 es el máximo que acepta el tool por página
-    dangerouslySkipVersionCheck: true,
   });
   if (!result.successful) throw new Error(result.error ?? "TIKTOK_LIST_VIDEOS falló");
 

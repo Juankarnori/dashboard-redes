@@ -26,7 +26,6 @@ export async function getFacebookPages(userId: string, connectedAccountId: strin
     userId,
     connectedAccountId,
     arguments: { fields: "id,name,picture" },
-    dangerouslySkipVersionCheck: true,
   });
   if (!result.successful) throw new Error(result.error ?? "FACEBOOK_LIST_MANAGED_PAGES falló");
 
@@ -57,7 +56,6 @@ export async function getFacebookPageProfile(
     userId,
     connectedAccountId,
     arguments: { page_id: pageId, fields: "id,name,fan_count,followers_count,picture" },
-    dangerouslySkipVersionCheck: true,
   });
   if (!result.successful) throw new Error(result.error ?? "FACEBOOK_GET_PAGE_DETAILS falló");
 
@@ -102,7 +100,6 @@ export async function getFacebookPageInsights(
       until: "now",
       metrics: "page_follows,page_post_engagements,page_media_view",
     },
-    dangerouslySkipVersionCheck: true,
   });
   if (!result.successful) throw new Error(result.error ?? "FACEBOOK_GET_PAGE_INSIGHTS falló");
 
@@ -141,7 +138,6 @@ export async function getFacebookPagePosts(
       limit,
       fields: "id,message,created_time,permalink_url,full_picture,reactions.summary(true),comments.summary(true)",
     },
-    dangerouslySkipVersionCheck: true,
   });
   if (!result.successful) throw new Error(result.error ?? "FACEBOOK_GET_PAGE_POSTS falló");
 
