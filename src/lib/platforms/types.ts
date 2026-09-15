@@ -104,6 +104,17 @@ export interface ProviderAccount {
   accessToken: string; // ya descifrado por el llamador
   refreshToken?: string; // ya descifrado por el llamador — solo redes con refresh (TikTok)
   tokenExpiresAt?: string | null;
+  /**
+   * Presente cuando la cuenta tiene una conexión Composio activa y
+   * linkeada (composio_connections.account_id) — ver
+   * lib/platforms/composio-adapter.ts (Fase 2). Los providers *Composio
+   * leen esto en vez de accessToken; accessToken/refreshToken se siguen
+   * llenando siempre igual (la integración directa queda de fallback
+   * por método: si el provider Composio no implementa algo —
+   * fetchComments, postCommentReply, publishContent, todavía en Fase 3
+   * — se usa el directo con esos mismos campos).
+   */
+  composio?: { userId: string; connectedAccountId: string };
 }
 
 export interface ProviderContentItem {

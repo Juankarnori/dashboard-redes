@@ -123,6 +123,30 @@ export async function getFacebookPageInsights(
   };
 }
 
+/**
+ * Vistas del post (lifetime) — el único metric que Meta todavía expone a
+ * nivel de post: `post_impressions_unique`/`post_engaged_users` y el
+ * resto de las métricas viejas de post-insights fueron deprecadas por
+ * Meta el 15 de noviembre de 2025. Verificado en vivo contra un post
+ * real (269 vistas) — pedir cualquier otra métrica falla o vuelve vacío.
+ */
+export async function getFacebookPostViews(
+  userId: string,
+  connectedAccountId: string,
+  postId: string
+): Promise<number | null> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("FACEBOOK_GET_POST_INSIGHTS", {
+    userId,
+    connectedAccountId,
+    arguments: { post_id: postId, metrics: "post_media_view" },
+  });
+  if (!result.successful) return null; // posts muy nuevos pueden no tener insights todavía — no es un error fatal
+
+  const point = (result.data.data as { values?: { value: number }[] }[] | undefined)?.[0];
+  return point?.values?.[0]?.value ?? null;
+}
+
 export async function getFacebookPagePosts(
   userId: string,
   connectedAccountId: string,

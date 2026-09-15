@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAuthorizedSyncRequest } from "@/lib/sync-auth";
 import { decryptToken } from "@/lib/crypto";
-import { getProvider } from "@/lib/platforms";
+import { resolveProviderForAccount } from "@/lib/platforms";
 import { recomputeAccountAlerts } from "@/lib/analytics/alerts";
 import { syncCommentsForAccount } from "@/lib/analytics/comments-sync";
 import { refreshAccountTokenIfNeeded } from "@/lib/platforms/token-refresh";
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     .single();
 
   try {
-    const provider = getProvider(account.platform);
+    const { provider, composio } = await resolveProviderForAccount(supabase, account.id, account.platform);
     const accessToken = decryptToken(account.access_token);
     const refreshToken = account.refresh_token ? decryptToken(account.refresh_token) : undefined;
     const providerAccount = await refreshAccountTokenIfNeeded(
@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
         accessToken,
         refreshToken,
         tokenExpiresAt: account.token_expires_at,
+        composio,
       },
       account.id
     );
