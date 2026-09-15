@@ -3,8 +3,11 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { PlatformBadge } from "@/components/dashboard/PlatformBadge";
 import { StatTile } from "@/components/dashboard/StatTile";
 import { ThumbnailImage } from "@/components/dashboard/ThumbnailImage";
-import { getComposioConnections } from "@/lib/social/connections";
+import { getComposioConnections, type ComposioConnection } from "@/lib/social/connections";
 import { getInstagramProfile, getInstagramAccountInsights, getInstagramMedia } from "@/lib/social/instagram";
+import { getFacebookPages, getFacebookPageProfile, getFacebookPageInsights, getFacebookPagePosts } from "@/lib/social/facebook";
+import { getTikTokProfile, getTikTokVideos } from "@/lib/social/tiktok";
+import type { ProviderContentItem } from "@/lib/platforms/types";
 import { ConnectComposioButton } from "./ConnectComposioButton";
 import type { Platform } from "@/types/db";
 
@@ -44,6 +47,8 @@ export default async function ComposioSettingsPage({
   const connections = await getComposioConnections(supabase, selectedBrandId);
   const composioConfigured = !!process.env.COMPOSIO_API_KEY;
   const igConnection = connections.find((c) => c.platform === "instagram");
+  const fbConnection = connections.find((c) => c.platform === "facebook");
+  const ttConnection = connections.find((c) => c.platform === "tiktok");
 
   return (
     <>
@@ -106,23 +111,97 @@ export default async function ComposioSettingsPage({
           </div>
         </section>
 
-        <section className="flex flex-col gap-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-600">
-            Analíticas de Instagram — vía Composio (proof of concept)
-          </h2>
-          {!composioConfigured ? (
-            <p className="text-sm text-ink-400">Configurá COMPOSIO_API_KEY para ver esto.</p>
-          ) : !igConnection ? (
-            <p className="text-sm text-ink-400">Conectá Instagram por Composio arriba primero.</p>
-          ) : (
+        <AnalyticsSection
+          title="Analíticas de Instagram — vía Composio (proof of concept)"
+          composioConfigured={composioConfigured}
+          connection={igConnection}
+          connectLabel="Conectá Instagram por Composio arriba primero."
+        >
+          {igConnection && (
             <ComposioInstagramAnalytics
               userId={igConnection.composio_user_id}
               connectedAccountId={igConnection.composio_connected_account_id}
             />
           )}
-        </section>
+        </AnalyticsSection>
+
+        <AnalyticsSection
+          title="Analíticas de Facebook — vía Composio (proof of concept)"
+          composioConfigured={composioConfigured}
+          connection={fbConnection}
+          connectLabel="Conectá Facebook por Composio arriba primero."
+        >
+          {fbConnection && (
+            <ComposioFacebookAnalytics
+              userId={fbConnection.composio_user_id}
+              connectedAccountId={fbConnection.composio_connected_account_id}
+            />
+          )}
+        </AnalyticsSection>
+
+        <AnalyticsSection
+          title="Analíticas de TikTok — vía Composio (proof of concept)"
+          composioConfigured={composioConfigured}
+          connection={ttConnection}
+          connectLabel="Conectá TikTok por Composio arriba primero."
+        >
+          {ttConnection && (
+            <ComposioTikTokAnalytics
+              userId={ttConnection.composio_user_id}
+              connectedAccountId={ttConnection.composio_connected_account_id}
+            />
+          )}
+        </AnalyticsSection>
       </div>
     </>
+  );
+}
+
+function AnalyticsSection({
+  title,
+  composioConfigured,
+  connection,
+  connectLabel,
+  children,
+}: {
+  title: string;
+  composioConfigured: boolean;
+  connection: ComposioConnection | undefined;
+  connectLabel: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-600">{title}</h2>
+      {!composioConfigured ? (
+        <p className="text-sm text-ink-400">Configurá COMPOSIO_API_KEY para ver esto.</p>
+      ) : !connection ? (
+        <p className="text-sm text-ink-400">{connectLabel}</p>
+      ) : (
+        children
+      )}
+    </section>
+  );
+}
+
+function MediaGrid({ items }: { items: ProviderContentItem[] }) {
+  if (items.length === 0) return <p className="text-sm text-ink-400">Sin publicaciones.</p>;
+  return (
+    <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+      {items.map((item) => (
+        <div key={item.externalId} className="relative aspect-square overflow-hidden rounded-[0.5rem] bg-surface-2">
+          <ThumbnailImage src={item.thumbnailUrl ?? null} alt={item.caption ?? "Post"} className="object-cover" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AnalyticsError({ message }: { message: string | null }) {
+  return (
+    <div className="rounded-[--radius-card] border border-dashed border-negative bg-negative-soft px-4 py-3 text-sm text-negative">
+      No se pudo traer analíticas por Composio: {message}
+    </div>
   );
 }
 
@@ -149,13 +228,7 @@ async function ComposioInstagramAnalytics({ userId, connectedAccountId }: { user
     fetchError = err instanceof Error ? err.message : String(err);
   }
 
-  if (fetchError || !data) {
-    return (
-      <div className="rounded-[--radius-card] border border-dashed border-negative bg-negative-soft px-4 py-3 text-sm text-negative">
-        No se pudo traer analíticas por Composio: {fetchError}
-      </div>
-    );
-  }
+  if (fetchError || !data) return <AnalyticsError message={fetchError} />;
 
   const { profile, insights, media } = data;
 
@@ -182,17 +255,112 @@ async function ComposioInstagramAnalytics({ userId, connectedAccountId }: { user
 
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-600">Últimas publicaciones</h3>
-        {media.length === 0 ? (
-          <p className="text-sm text-ink-400">Sin publicaciones.</p>
-        ) : (
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-            {media.map((item) => (
-              <div key={item.externalId} className="relative aspect-square overflow-hidden rounded-[0.5rem] bg-surface-2">
-                <ThumbnailImage src={item.thumbnailUrl ?? null} alt={item.caption ?? "Post"} className="object-cover" />
-              </div>
-            ))}
+        <MediaGrid items={media} />
+      </div>
+    </div>
+  );
+}
+
+async function ComposioFacebookAnalytics({ userId, connectedAccountId }: { userId: string; connectedAccountId: string }) {
+  let data: {
+    page: Awaited<ReturnType<typeof getFacebookPageProfile>>;
+    insights: Awaited<ReturnType<typeof getFacebookPageInsights>>;
+    posts: Awaited<ReturnType<typeof getFacebookPagePosts>>;
+  } | null = null;
+  let fetchError: string | null = null;
+
+  try {
+    const pages = await getFacebookPages(userId, connectedAccountId);
+    const pageId = pages[0]?.id;
+    if (!pageId) throw new Error("La cuenta no administra ninguna Página de Facebook.");
+
+    const [page, insights, posts] = await Promise.all([
+      getFacebookPageProfile(userId, connectedAccountId, pageId),
+      getFacebookPageInsights(userId, connectedAccountId, pageId, 7),
+      getFacebookPagePosts(userId, connectedAccountId, pageId, 12),
+    ]);
+    data = { page, insights, posts };
+  } catch (err) {
+    fetchError = err instanceof Error ? err.message : String(err);
+  }
+
+  if (fetchError || !data) return <AnalyticsError message={fetchError} />;
+
+  const { page, insights, posts } = data;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-3 rounded-[--radius-card] border border-border bg-surface-1 p-4">
+        {page.profilePictureUrl && (
+          <div className="relative h-12 w-12 overflow-hidden rounded-full bg-surface-2">
+            <ThumbnailImage src={page.profilePictureUrl} alt={page.name ?? "Página"} className="object-cover" />
           </div>
         )}
+        <div>
+          <p className="text-sm font-semibold text-ink-900">{page.name ?? "—"}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Seguidores" value={(page.followersCount ?? page.fanCount)?.toLocaleString("es") ?? "—"} />
+        <StatTile label="Seguidores (insights)" value={insights.follows?.toLocaleString("es") ?? "—"} />
+        <StatTile label="Interacciones (7d)" value={insights.postEngagements?.toLocaleString("es") ?? "—"} />
+        <StatTile label="Vistas de contenido (7d)" value={insights.mediaViews?.toLocaleString("es") ?? "—"} />
+      </div>
+
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-600">Últimas publicaciones</h3>
+        <MediaGrid items={posts} />
+      </div>
+    </div>
+  );
+}
+
+async function ComposioTikTokAnalytics({ userId, connectedAccountId }: { userId: string; connectedAccountId: string }) {
+  let data: {
+    profile: Awaited<ReturnType<typeof getTikTokProfile>>;
+    videos: Awaited<ReturnType<typeof getTikTokVideos>>;
+  } | null = null;
+  let fetchError: string | null = null;
+
+  try {
+    const [profile, videos] = await Promise.all([
+      getTikTokProfile(userId, connectedAccountId),
+      getTikTokVideos(userId, connectedAccountId, 12),
+    ]);
+    data = { profile, videos };
+  } catch (err) {
+    fetchError = err instanceof Error ? err.message : String(err);
+  }
+
+  if (fetchError || !data) return <AnalyticsError message={fetchError} />;
+
+  const { profile, videos } = data;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-3 rounded-[--radius-card] border border-border bg-surface-1 p-4">
+        {profile.avatarUrl && (
+          <div className="relative h-12 w-12 overflow-hidden rounded-full bg-surface-2">
+            <ThumbnailImage src={profile.avatarUrl} alt={profile.username ?? "Perfil"} className="object-cover" />
+          </div>
+        )}
+        <div>
+          <p className="text-sm font-semibold text-ink-900">@{profile.username ?? "—"}</p>
+          <p className="text-xs text-ink-400">{profile.displayName}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Seguidores" value={profile.followerCount?.toLocaleString("es") ?? "—"} />
+        <StatTile label="Siguiendo" value={profile.followingCount?.toLocaleString("es") ?? "—"} />
+        <StatTile label="Me gusta totales" value={profile.likesCount?.toLocaleString("es") ?? "—"} />
+        <StatTile label="Videos" value={profile.videoCount?.toLocaleString("es") ?? "—"} />
+      </div>
+
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-600">Últimos videos</h3>
+        <MediaGrid items={videos} />
       </div>
     </div>
   );
