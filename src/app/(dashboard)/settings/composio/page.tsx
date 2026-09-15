@@ -104,7 +104,11 @@ export default async function ComposioSettingsPage({
                       ))}
                     </ul>
                   )}
-                  <ConnectComposioButton brandId={selectedBrandId} platform={platform} />
+                  <ConnectComposioButton
+                    brandId={selectedBrandId}
+                    platform={platform}
+                    alreadyConnected={platformConnections.length > 0}
+                  />
                 </div>
               );
             })}

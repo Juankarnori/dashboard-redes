@@ -16,9 +16,24 @@ const PLATFORM_LABELS: Record<Platform, string> = {
  * un link de autorización, el dueño lo abre en otra pestaña y completa
  * el OAuth ahí, y recién cuando vuelve confirmamos que ya quedó activa.
  * No hay forma de automatizar la parte de "completar el login" desde acá.
+ *
+ * `alreadyConnected` (si ya hay >=1 conexión activa de esta red) cambia
+ * el label del botón a "Conectar otra cuenta" — antes decía siempre
+ * "Conectar X por Composio" sin importar el estado, lo que invitaba a
+ * volver a hacer clic pensando que no había funcionado (encontrado en
+ * vivo: terminamos con 2 filas de Instagram en composio_connections
+ * para el mismo negocio, ~18s de diferencia, casi seguro por esto).
  */
-export function ConnectComposioButton({ brandId, platform }: { brandId: string; platform: Platform }) {
-  const [step, setStep] = useState<"idle" | "pending" | "confirming">("idle");
+export function ConnectComposioButton({
+  brandId,
+  platform,
+  alreadyConnected = false,
+}: {
+  brandId: string;
+  platform: Platform;
+  alreadyConnected?: boolean;
+}) {
+  const [step, setStep] = useState<"idle" | "pending" | "confirming" | "done">("idle");
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [connectedAccountId, setConnectedAccountId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,16 +61,33 @@ export function ConnectComposioButton({ brandId, platform }: { brandId: string; 
       setStep("pending"); // puede que Meta/TikTok todavía no terminó — dejamos reintentar "Ya autoricé"
       return;
     }
-    setStep("idle");
+    // "done" en vez de volver directo a "idle": deja ver la confirmación
+    // un momento en vez de que el botón desaparezca de golpe sin feedback.
+    setStep("done");
     setRedirectUrl(null);
     setConnectedAccountId(null);
+  }
+
+  if (step === "done") {
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="text-xs font-medium text-positive">✓ Cuenta conectada.</p>
+        <button
+          type="button"
+          onClick={() => setStep("idle")}
+          className="w-fit text-xs text-ink-400 hover:text-ink-900"
+        >
+          Conectar otra cuenta
+        </button>
+      </div>
+    );
   }
 
   if (step === "idle") {
     return (
       <div className="flex flex-col gap-1">
         <Button type="button" variant="secondary" size="sm" onClick={handleStart}>
-          Conectar {PLATFORM_LABELS[platform]} por Composio
+          {alreadyConnected ? `Conectar otra cuenta de ${PLATFORM_LABELS[platform]}` : `Conectar ${PLATFORM_LABELS[platform]} por Composio`}
         </Button>
         {error && <p className="text-xs text-negative">{error}</p>}
       </div>
