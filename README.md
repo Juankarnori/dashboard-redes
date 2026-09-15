@@ -265,6 +265,74 @@ contra una cuenta real** — mismo caveat que el resto de la integración de
 TikTok en este proyecto. Verificalo contra la documentación viva antes de
 depender de él en producción.
 
+## 8. Motor Composio (rediseño en curso)
+
+⚠️ Numeración aparte a propósito: las "Fases" de las secciones 1-6 de
+arriba son las del build original de este proyecto. Esta sección es de
+un rediseño posterior (rama `feature/composio-v2`) que reemplaza el
+sistema de diseño y migra la integración de IG/FB/TikTok a
+[Composio](https://composio.dev) — su propio plan de fases (Fase 0 =
+diseño, Fase 1 = esto) es independiente del de arriba.
+
+**Qué es esto y qué no es todavía**: `src/lib/social/*` es un motor de
+integración nuevo que corre **en paralelo** a la integración directa
+actual (`src/lib/meta/*`, `src/lib/tiktok/*`, `src/lib/platforms/*`) —
+no la reemplaza ni la toca. Se retira código directo solo cuando su
+equivalente en Composio queda verificado, cuenta por cuenta, no de una.
+
+### Setup
+
+1. Conseguí tu API key en [app.composio.dev](https://app.composio.dev) →
+   Settings → API Keys.
+2. Agregá `COMPOSIO_API_KEY` a `.env.local` (y a Vercel para producción)
+   — server-side únicamente, nunca se expone al cliente.
+3. Andá a `/settings/composio`, elegí un negocio y conectá Instagram/
+   Facebook con el botón — Composio maneja el OAuth con su propia auth
+   administrada, no hace falta credenciales propias de Meta para esto.
+4. **TikTok es distinto**: no acepta la auth administrada de Composio,
+   necesita tu propia app (`TIKTOK_CLIENT_KEY`/`TIKTOK_CLIENT_SECRET`,
+   las mismas que ya usa la integración directa). El código para crear
+   ese auth config por API existe (`getOrCreateTikTokAuthConfig` en
+   `lib/social/connections.ts`) pero **el nombre exacto de los campos de
+   credenciales no está verificado contra la API real de Composio
+   todavía** — antes de confiar en él, probalo con tu API key real o
+   armá el auth config una vez a mano en el dashboard de Composio
+   (Toolkits → TikTok → Configure) e inspeccioná el payload que arma esa
+   UI para confirmar los nombres de campo.
+
+### Qué ya funciona de punta a punta
+
+`/settings/composio` trae analíticas de Instagram **en vivo** vía
+Composio (perfil, alcance/interacciones de los últimos 7 días, últimas
+publicaciones) — el proof of concept de la Fase 1. Reutiliza
+`ProviderContentItem` (`lib/platforms/types.ts`) como shape de salida,
+así que cuando esto reemplace al sync directo (Fase 3 del plan de
+Composio) el resto de la app no debería tener que cambiar.
+
+### Cómo se modela
+
+`composio_connections` (migración `0015`) mapea cada cuenta conectada
+por Composio a un negocio — tabla nueva, separada de `accounts` (la de
+la integración directa) a propósito: así ninguna migra hasta que se
+decida moverla, y nada de lo existente (sync, calendario, comentarios)
+se ve afectado mientras tanto.
+
+### Verificado contra el SDK real, no inventado
+
+El shape exacto de `@composio/core` (`composio.tools.execute(slug,
+{userId, connectedAccountId, arguments})`, `composio.connectedAccounts.
+initiate(...)`, `composio.authConfigs.create(...)`) se confirmó leyendo
+el código fuente TypeScript que se instala con el paquete
+(`node_modules/@composio/core/src/`), no adivinado ni copiado de docs
+scrapeadas — la documentación pública no fue 100% consistente entre sí
+en algunos puntos durante la investigación. Los slugs de tools
+(`INSTAGRAM_GET_USER_INFO`, `INSTAGRAM_POST_IG_USER_MEDIA`,
+`FACEBOOK_CREATE_MULTI_PHOTO_POST`, etc.) se verificaron contra el
+catálogo real de Composio, no contra la lista original del brief (que
+tenía al menos un slug con nombre incorrecto —
+`INSTAGRAM_CREATE_MEDIA_CONTAINER` no existe, es
+`INSTAGRAM_POST_IG_USER_MEDIA`).
+
 ## Limitaciones conocidas de TikTok
 
 Dos cosas que **no son bugs de este código**, sino límites reales del
@@ -310,7 +378,8 @@ src/
 ├── app/
 │   ├── (auth)/login/            # login del dueño
 │   ├── (dashboard)/             # shell con sidebar + rutas del dashboard
-│   │   ├── settings/accounts/   # gestión de negocios y cuentas conectadas
+│   │   ├── settings/accounts/   # gestión de negocios y cuentas conectadas (integración directa)
+│   │   ├── settings/composio/   # conexiones + proof of concept del motor Composio (en paralelo)
 │   │   ├── content/             # galería + detalle de contenido
 │   │   ├── analytics/           # heatmap de horario, formato, comparador de cuentas
 │   │   ├── comments/            # bandeja centralizada de comentarios
@@ -335,6 +404,7 @@ src/
 │   ├── tiktok/                  # llamadas crudas a la API de TikTok
 │   ├── whatsapp/                # WhatsApp Cloud API (envío, ventana de 24h, queries)
 │   ├── platforms/                # interfaz PlatformProvider (instagram/facebook/tiktok)
+│   ├── social/                   # motor Composio (client, instagram, connections) — en paralelo
 │   ├── analytics/                # agregaciones (engagement, queries, recomendaciones,
 │   │                             # clasificación de comentarios, alertas, reporte semanal)
 │   ├── anthropic/                # integración con la API de Claude (opcional)

@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { href: "/recommendations", label: "Recomendaciones" },
   { href: "/reports", label: "Reportes" },
   { href: "/settings/accounts", label: "Cuentas" },
+  { href: "/settings/composio", label: "Composio" },
 ];
 
 export function MobileTopBar({ onOpenMenu }: { onOpenMenu: () => void }) {

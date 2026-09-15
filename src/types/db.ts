@@ -625,6 +625,49 @@ export interface Database {
           },
         ];
       };
+      composio_connections: {
+        Row: {
+          id: string;
+          brand_id: string;
+          platform: Platform;
+          account_id: string | null;
+          composio_user_id: string;
+          composio_connected_account_id: string;
+          alias: string | null;
+          external_username: string | null;
+          status: string;
+          connected_at: string;
+        };
+        Insert: {
+          id?: string;
+          brand_id: string;
+          platform: Platform;
+          account_id?: string | null;
+          composio_user_id: string;
+          composio_connected_account_id: string;
+          alias?: string | null;
+          external_username?: string | null;
+          status?: string;
+          connected_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["composio_connections"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "composio_connections_brand_id_fkey";
+            columns: ["brand_id"];
+            isOneToOne: false;
+            referencedRelation: "brands";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "composio_connections_account_id_fkey";
+            columns: ["account_id"];
+            isOneToOne: false;
+            referencedRelation: "accounts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
