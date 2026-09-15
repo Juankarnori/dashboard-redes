@@ -41,11 +41,13 @@ export async function getTikTokProfile(userId: string, connectedAccountId: strin
   });
   if (!result.successful) throw new Error(result.error ?? "TIKTOK_GET_USER_STATS falló");
 
-  // A diferencia de casi todos los demás tools de este service layer, acá
-  // NO hay un nivel extra de anidamiento ({data:{user:{...}}}, no
-  // {data:{data:{user:{...}}}}) — confirmado en vivo, no asumido por
-  // simetría con TIKTOK_LIST_VIDEOS (que sí anida un nivel más).
-  const user = (result.data.user as Record<string, unknown> | undefined) ?? {};
+  // Mismo doble anidamiento que TIKTOK_LIST_VIDEOS ({data:{data:{user:{...}}}}):
+  // TikTok API ya envuelve su respuesta en {data,error}, y Composio no lo
+  // desenvuelve. La primera verificación en vivo de esto (commit
+  // anterior) leyó mal su propio log e infirió el anidamiento contrario
+  // — vuelto a confirmar leyendo Object.keys() de la respuesta cruda, no
+  // solo un JSON.stringify recortado.
+  const user = (result.data.data as { user?: Record<string, unknown> } | undefined)?.user ?? {};
   return {
     username: (user.username as string) ?? null,
     displayName: (user.display_name as string) ?? null,
