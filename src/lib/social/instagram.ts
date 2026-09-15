@@ -15,6 +15,15 @@ import type { ProviderContentItem } from "@/lib/platforms/types";
  * principal (Fase 3) hay que pinnear versiones concretas via
  * `toolkitVersions` en el cliente (ver client.ts) para no romper si
  * Composio actualiza el toolkit de Instagram.
+ *
+ * `userId` (el mismo que se usó al conectar la cuenta — ver
+ * composio_connections.composio_user_id) va SIEMPRE junto con
+ * connectedAccountId: encontrado en vivo probando contra datos reales —
+ * sin userId, Composio devuelve 400
+ * ActionExecute_ConnectedAccountEntityIdRequired ("User ID is required
+ * with connected account") aunque connectedAccountId ya identifique la
+ * cuenta sin ambigüedad. No estaba documentado así en los ejemplos del
+ * SDK que se leyeron para el commit anterior.
  */
 
 export interface SocialProfile {
@@ -27,16 +36,14 @@ export interface SocialProfile {
   profilePictureUrl: string | null;
 }
 
-export async function getInstagramProfile(connectedAccountId: string): Promise<SocialProfile> {
+export async function getInstagramProfile(userId: string, connectedAccountId: string): Promise<SocialProfile> {
   const composio = getComposioClient();
-  const result = await composio.tools.execute(
-    "INSTAGRAM_GET_USER_INFO",
-    {
-      connectedAccountId,
-      arguments: { ig_user_id: "me" },
-      dangerouslySkipVersionCheck: true,
-    }
-  );
+  const result = await composio.tools.execute("INSTAGRAM_GET_USER_INFO", {
+    userId,
+    connectedAccountId,
+    arguments: { ig_user_id: "me" },
+    dangerouslySkipVersionCheck: true,
+  });
   if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_GET_USER_INFO falló");
 
   const data = result.data as Record<string, unknown>;
@@ -62,6 +69,7 @@ const ACCOUNT_METRICS = ["reach", "follower_count", "accounts_engaged", "total_i
 
 /** Insights de cuenta de los últimos `days` días (period=day, since/until en Unix timestamp). */
 export async function getInstagramAccountInsights(
+  userId: string,
   connectedAccountId: string,
   days = 7
 ): Promise<AccountInsights> {
@@ -69,14 +77,12 @@ export async function getInstagramAccountInsights(
   const until = Math.floor(Date.now() / 1000);
   const since = until - days * 86_400;
 
-  const result = await composio.tools.execute(
-    "INSTAGRAM_GET_USER_INSIGHTS",
-    {
-      connectedAccountId,
-      arguments: { ig_user_id: "me", metric: [...ACCOUNT_METRICS], period: "day", since, until },
-      dangerouslySkipVersionCheck: true,
-    }
-  );
+  const result = await composio.tools.execute("INSTAGRAM_GET_USER_INSIGHTS", {
+    userId,
+    connectedAccountId,
+    arguments: { ig_user_id: "me", metric: [...ACCOUNT_METRICS], period: "day", since, until },
+    dangerouslySkipVersionCheck: true,
+  });
   if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_GET_USER_INSIGHTS falló");
 
   // La respuesta trae una serie de datapoints por métrica — sumamos los
@@ -108,18 +114,17 @@ function mapMediaType(mediaType?: string, mediaProductType?: string): ProviderCo
 
 /** Página de medios recientes del usuario — sin insights (ver getInstagramMediaInsights aparte, la API no los trae en el mismo llamado). */
 export async function getInstagramMedia(
+  userId: string,
   connectedAccountId: string,
   limit = 25
 ): Promise<ProviderContentItem[]> {
   const composio = getComposioClient();
-  const result = await composio.tools.execute(
-    "INSTAGRAM_GET_IG_USER_MEDIA",
-    {
-      connectedAccountId,
-      arguments: { ig_user_id: "me", limit },
-      dangerouslySkipVersionCheck: true,
-    }
-  );
+  const result = await composio.tools.execute("INSTAGRAM_GET_IG_USER_MEDIA", {
+    userId,
+    connectedAccountId,
+    arguments: { ig_user_id: "me", limit },
+    dangerouslySkipVersionCheck: true,
+  });
   if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_GET_IG_USER_MEDIA falló");
 
   const items = (result.data.data as Record<string, unknown>[] | undefined) ?? [];
@@ -154,24 +159,24 @@ export interface MediaInsights {
 const MEDIA_METRICS = ["reach", "views", "likes", "comments", "saved", "shares", "total_interactions"] as const;
 
 export async function getInstagramMediaInsights(
+  userId: string,
   connectedAccountId: string,
   mediaId: string
 ): Promise<MediaInsights> {
   const composio = getComposioClient();
-  const result = await composio.tools.execute(
-    "INSTAGRAM_GET_IG_MEDIA_INSIGHTS",
-    {
-      connectedAccountId,
-      arguments: { ig_media_id: mediaId, metric: [...MEDIA_METRICS] },
-      dangerouslySkipVersionCheck: true,
-    }
-  );
+  const result = await composio.tools.execute("INSTAGRAM_GET_IG_MEDIA_INSIGHTS", {
+    userId,
+    connectedAccountId,
+    arguments: { ig_media_id: mediaId, metric: [...MEDIA_METRICS] },
+    dangerouslySkipVersionCheck: true,
+  });
   if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_GET_IG_MEDIA_INSIGHTS falló");
 
   const byMetric = new Map<string, number>();
   const dataPoints =
-    (result.data.data as { name: string; values?: { value: number }[]; total_value?: { value: number } }[] | undefined) ??
-    [];
+    (result.data.data as
+      | { name: string; values?: { value: number }[]; total_value?: { value: number } }[]
+      | undefined) ?? [];
   for (const point of dataPoints) {
     const value = point.total_value?.value ?? (point.values ?? []).reduce((acc, v) => acc + (v.value ?? 0), 0);
     byMetric.set(point.name, value);

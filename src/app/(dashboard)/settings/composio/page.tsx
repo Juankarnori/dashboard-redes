@@ -115,7 +115,10 @@ export default async function ComposioSettingsPage({
           ) : !igConnection ? (
             <p className="text-sm text-ink-400">Conectá Instagram por Composio arriba primero.</p>
           ) : (
-            <ComposioInstagramAnalytics connectedAccountId={igConnection.composio_connected_account_id} />
+            <ComposioInstagramAnalytics
+              userId={igConnection.composio_user_id}
+              connectedAccountId={igConnection.composio_connected_account_id}
+            />
           )}
         </section>
       </div>
@@ -123,7 +126,7 @@ export default async function ComposioSettingsPage({
   );
 }
 
-async function ComposioInstagramAnalytics({ connectedAccountId }: { connectedAccountId: string }) {
+async function ComposioInstagramAnalytics({ userId, connectedAccountId }: { userId: string; connectedAccountId: string }) {
   // JSX no se construye dentro del try: React no captura errores de
   // render con try/catch (solo error boundaries), así que separamos "ir
   // a buscar los datos" (esto sí puede tirar y acá sí lo atrapamos) de
@@ -137,9 +140,9 @@ async function ComposioInstagramAnalytics({ connectedAccountId }: { connectedAcc
 
   try {
     const [profile, insights, media] = await Promise.all([
-      getInstagramProfile(connectedAccountId),
-      getInstagramAccountInsights(connectedAccountId, 7),
-      getInstagramMedia(connectedAccountId, 12),
+      getInstagramProfile(userId, connectedAccountId),
+      getInstagramAccountInsights(userId, connectedAccountId, 7),
+      getInstagramMedia(userId, connectedAccountId, 12),
     ]);
     data = { profile, insights, media };
   } catch (err) {
