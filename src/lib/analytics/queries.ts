@@ -594,3 +594,51 @@ export async function getAttentionSummary(supabase: DB, filters: OverviewFilters
     pendingDrafts: draftsResult.count ?? 0,
   };
 }
+
+export interface TrendPoint {
+  date: string;
+  followers: number;
+  reach: number;
+  interactions: number;
+}
+
+/**
+ * Fase 2 (Analíticas): serie diaria para el gráfico de tendencias —
+ * mismo criterio que getKpiTrends (sumar por día ACROSS CUENTAS es
+ * válido, nunca sumar `reach` across días). `reach` acá es la métrica
+ * diaria (no `reach_7d`): el objetivo del gráfico es mostrar cómo varía
+ * día a día, no un total.
+ */
+export async function getTrendSeries(supabase: DB, filters: OverviewFilters, days = 30): Promise<TrendPoint[]> {
+  const accounts = await getFilteredAccounts(supabase, filters);
+  const accountIds = accounts.map((a) => a.id);
+  if (accountIds.length === 0) return [];
+
+  const since = new Date(Date.now() - days * DAY_MS).toISOString();
+  const { data: audienceRows } = await supabase
+    .from("audience_snapshot")
+    .select("account_id, captured_at, followers, reach, interactions")
+    .in("account_id", accountIds)
+    .gte("captured_at", since)
+    .order("captured_at", { ascending: true });
+
+  const rows = audienceRows ?? [];
+  const followers = metricSeriesByDay(rows, "followers");
+  const reach = metricSeriesByDay(rows, "reach");
+  const interactions = metricSeriesByDay(rows, "interactions");
+
+  const byDate = new Map<string, TrendPoint>();
+  for (const { date, value } of followers) byDate.set(date, { date, followers: value, reach: 0, interactions: 0 });
+  for (const { date, value } of reach) {
+    const point = byDate.get(date) ?? { date, followers: 0, reach: 0, interactions: 0 };
+    point.reach = value;
+    byDate.set(date, point);
+  }
+  for (const { date, value } of interactions) {
+    const point = byDate.get(date) ?? { date, followers: 0, reach: 0, interactions: 0 };
+    point.interactions = value;
+    byDate.set(date, point);
+  }
+
+  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+}

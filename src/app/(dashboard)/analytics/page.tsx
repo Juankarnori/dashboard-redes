@@ -2,10 +2,11 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import { FormatComparisonChart } from "@/components/charts/FormatComparisonChart";
-import { getContentForAnalysis, getAccountComparison, getFilteredAccounts } from "@/lib/analytics/queries";
+import { getContentForAnalysis, getAccountComparison, getFilteredAccounts, getTrendSeries } from "@/lib/analytics/queries";
 import { bestPostingTimes, formatComparison } from "@/lib/analytics/recommendations";
 import { BestTimeHeatmap } from "./BestTimeHeatmap";
 import { AccountComparator } from "./AccountComparator";
+import { TrendChart } from "@/components/charts/TrendChart";
 import type { Platform } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -24,9 +25,10 @@ export default async function AnalyticsPage({
   const accounts = await getFilteredAccounts(supabase, filters);
   const accountIds = accounts.map((a) => a.id);
 
-  const [items, accountComparison] = await Promise.all([
+  const [items, accountComparison, trendSeries] = await Promise.all([
     getContentForAnalysis(supabase, accountIds),
     getAccountComparison(supabase, filters),
+    getTrendSeries(supabase, filters),
   ]);
 
   // minSamples=1 (en vez del 2 que usa la recomendación de "mejor horario")
@@ -44,6 +46,13 @@ export default async function AnalyticsPage({
       <FilterBar brands={brands ?? []} />
 
       <div className="flex flex-col gap-8 px-4 py-6 sm:px-8">
+        <section className="flex flex-col gap-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-600">Tendencia (alcance / vistas e interacciones)</h2>
+          <div className="rounded-[--radius-card] border border-border bg-surface-1 p-5">
+            <TrendChart data={trendSeries} />
+          </div>
+        </section>
+
         <section className="flex flex-col gap-3">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-600">Mejor horario</h2>
           <div className="rounded-[--radius-card] border border-border bg-surface-1 p-5">
