@@ -73,10 +73,28 @@ export async function confirmComposioConnection(
     }
 
     const supabase = await createClient();
+
+    // account_id: linkea contra la cuenta ya existente de accounts (la
+    // misma que usa la integración directa) para que /api/sync tenga
+    // dónde escribir content/content_metrics/audience_snapshot cuando
+    // lea por Composio (ver Fase 2). Asume 1 cuenta activa por
+    // negocio+red — mismo supuesto que el backfill de la migración
+    // 0016; deja de alcanzar si un negocio conecta 2 cuentas de la
+    // misma red por Composio (allowMultiple:true lo permite en teoría,
+    // no pasa hoy en la práctica).
+    const { data: matchingAccount } = await supabase
+      .from("accounts")
+      .select("id")
+      .eq("brand_id", brandId)
+      .eq("platform", platform)
+      .eq("status", "active")
+      .maybeSingle();
+
     const { error } = await supabase.from("composio_connections").upsert(
       {
         brand_id: brandId,
         platform,
+        account_id: matchingAccount?.id ?? null,
         composio_user_id: brandId,
         composio_connected_account_id: connectedAccountId,
         alias: alias || null,
