@@ -72,19 +72,21 @@ export async function getOrCreateTikTokAuthConfig(): Promise<string> {
     credentials: { client_id: clientKey, client_secret: clientSecret },
     // Sin esto, Composio pide el scope completo del toolkit de TikTok al
     // autorizar — y tu app de TikTok (Login Kit) solo tiene aprobados
-    // user.info.profile/user.info.stats/video.list/video.upload (ver
+    // user.info.profile/user.info.stats/video.list (ver
     // TIKTOK_OAUTH_SCOPES en lib/tiktok/oauth.ts, la integración
-    // directa). Restringir a los tools que este service layer realmente
-    // usa acota el scope pedido a algo que tu app SÍ tiene aprobado —
-    // encontrado en vivo (la conexión real fallaba con "correct: scope"
-    // en TikTok), no algo documentado que haya podido leer de antemano.
+    // directa: NO incluye video.publish ni video.upload). El primer
+    // intento de acotar esto (commit 70ae542) seguía pidiendo scope de
+    // más: TIKTOK_QUERY_CREATOR_INFO y TIKTOK_UPLOAD_VIDEO son ambos
+    // parte de la Content Posting API y requieren video.publish/
+    // video.upload — confirmado leyendo la descripción real de esos
+    // tools contra el catálogo de Composio (no asumido), y es el motivo
+    // real por el que el error de "scope" seguía apareciendo tras ese
+    // primer intento. Dejamos solo los tools de lectura cuyo scope SÍ
+    // está aprobado; publicar por Composio queda pendiente hasta que el
+    // TikTok Developer Console del dueño tenga video.publish/
+    // video.upload aprobados.
     toolAccessConfig: {
-      toolsForConnectedAccountCreation: [
-        "TIKTOK_GET_USER_STATS",
-        "TIKTOK_LIST_VIDEOS",
-        "TIKTOK_QUERY_CREATOR_INFO",
-        "TIKTOK_UPLOAD_VIDEO",
-      ],
+      toolsForConnectedAccountCreation: ["TIKTOK_GET_USER_STATS", "TIKTOK_LIST_VIDEOS"],
     },
   });
   return created.id;
