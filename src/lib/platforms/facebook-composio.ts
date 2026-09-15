@@ -1,5 +1,11 @@
 import type { PlatformProvider, ProviderAccount, ProviderAudienceSnapshot, ProviderContentItem } from "./types";
-import { getFacebookPages, getFacebookPageProfile, getFacebookPagePosts, getFacebookPostViews } from "@/lib/social/facebook";
+import {
+  getFacebookPages,
+  getFacebookPageProfile,
+  getFacebookPageInsights,
+  getFacebookPagePosts,
+  getFacebookPostViews,
+} from "@/lib/social/facebook";
 
 /**
  * Facebook vía Composio — mismo patrón que instagram-composio.ts. Una
@@ -50,9 +56,19 @@ export const facebookComposioProvider: PlatformProvider = {
   async fetchAudience(account: ProviderAccount): Promise<ProviderAudienceSnapshot> {
     const { userId, connectedAccountId } = requireComposio(account);
     const pageId = await resolvePageId(userId, connectedAccountId, account.externalId);
-    const page = await getFacebookPageProfile(userId, connectedAccountId, pageId);
+    const [page, daily] = await Promise.all([
+      getFacebookPageProfile(userId, connectedAccountId, pageId),
+      getFacebookPageInsights(userId, connectedAccountId, pageId, 1),
+    ]);
     return {
       followers: (page.followersCount ?? page.fanCount) ?? undefined,
+      // Sin reachToday/reach7d: Meta deprecó el reach a nivel de Página,
+      // page_media_view (vistas) es lo más cercano que queda y SÍ es
+      // aditivo entre días (es un conteo de eventos, no cuentas únicas)
+      // — no necesita el truco de total_value, a diferencia del reach
+      // de Instagram. El KPI de 7d se arma sumando 7 días de esto en
+      // vez de pedir un total aparte (ver getKpiTrends).
+      interactionsToday: daily.mediaViews ?? undefined,
     };
   },
 };

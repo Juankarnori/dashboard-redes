@@ -213,6 +213,9 @@ export interface Database {
           follows: number | null;
           media_count: number | null;
           demographics: Record<string, unknown>;
+          reach: number | null;
+          reach_7d: number | null;
+          interactions: number | null;
         };
         Insert: {
           id?: string;
@@ -222,6 +225,9 @@ export interface Database {
           follows?: number | null;
           media_count?: number | null;
           demographics?: Record<string, unknown>;
+          reach?: number | null;
+          reach_7d?: number | null;
+          interactions?: number | null;
         };
         Update: Partial<Database["public"]["Tables"]["audience_snapshot"]["Insert"]>;
         Relationships: [

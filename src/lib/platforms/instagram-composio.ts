@@ -1,5 +1,5 @@
 import type { PlatformProvider, ProviderAccount, ProviderAudienceSnapshot, ProviderContentItem } from "./types";
-import { getInstagramProfile, getInstagramMedia, getInstagramMediaInsights } from "@/lib/social/instagram";
+import { getInstagramProfile, getInstagramMedia, getInstagramMediaInsights, getInstagramAccountInsights } from "@/lib/social/instagram";
 
 /**
  * Instagram vía Composio, con la misma forma que instagramProvider
@@ -58,11 +58,25 @@ export const instagramComposioProvider: PlatformProvider = {
 
   async fetchAudience(account: ProviderAccount): Promise<ProviderAudienceSnapshot> {
     const { userId, connectedAccountId } = requireComposio(account);
-    const profile = await getInstagramProfile(userId, connectedAccountId);
+    // getInstagramAccountInsights ya pide metric_type=total_value (ver el
+    // fix del bug de alcance) — reusarla con days=1 da el punto DE ESE
+    // día (para el gráfico de tendencias) y con days=7 da el alcance
+    // único ya deduplicado de la semana (para el KPI de Resumen). Son
+    // dos llamadas porque son dos preguntas distintas, no una redundancia:
+    // el total de 7 días NO es la suma de 7 días individuales (ver
+    // reach_7d en la migración 0017).
+    const [profile, daily, weekly] = await Promise.all([
+      getInstagramProfile(userId, connectedAccountId),
+      getInstagramAccountInsights(userId, connectedAccountId, 1),
+      getInstagramAccountInsights(userId, connectedAccountId, 7),
+    ]);
     return {
       followers: profile.followersCount ?? undefined,
       follows: profile.followsCount ?? undefined,
       mediaCount: profile.mediaCount ?? undefined,
+      reachToday: daily.reach ?? undefined,
+      interactionsToday: daily.totalInteractions ?? undefined,
+      reach7d: weekly.reach ?? undefined,
     };
   },
 };

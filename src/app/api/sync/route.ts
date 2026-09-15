@@ -176,6 +176,13 @@ export async function POST(request: NextRequest) {
         follows: audience.follows ?? null,
         media_count: audience.mediaCount ?? null,
         demographics: audience.demographics ?? {},
+        // reach/reach_7d/interactions: solo Instagram y (parcialmente)
+        // Facebook los llenan hoy — ver ProviderAudienceSnapshot en
+        // lib/platforms/types.ts. TikTok no expone nada de esto a nivel
+        // de cuenta, quedan en null para esa red (columna nullable).
+        reach: audience.reachToday ?? null,
+        reach_7d: audience.reach7d ?? null,
+        interactions: audience.interactionsToday ?? null,
       });
 
       // No fatal: si falla el cálculo de alertas, el sync ya guardó todo

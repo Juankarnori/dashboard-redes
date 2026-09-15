@@ -142,4 +142,26 @@ export interface ProviderAudienceSnapshot {
   follows?: number;
   mediaCount?: number;
   demographics?: Record<string, unknown>;
+  /**
+   * Alcance/vistas de ESE día únicamente (no acumulable entre días — ver
+   * audience_snapshot.reach). Solo Instagram lo llena hoy (Facebook ya
+   * no tiene una métrica de reach a nivel de Página, Meta la deprecó;
+   * TikTok no expone nada a nivel de cuenta más allá de
+   * TIKTOK_GET_USER_STATS). Queda undefined en las redes que no lo tienen.
+   */
+  reachToday?: number;
+  /**
+   * Alcance único YA deduplicado de los últimos 7 días (metric_type=
+   * total_value en Instagram) — es lo que alimenta el KPI "Alcance (7d)"
+   * de Resumen. NUNCA se deriva sumando 7 `reachToday` (ver bug real
+   * corregido en getInstagramAccountInsights).
+   */
+  reach7d?: number;
+  /**
+   * Interacciones/vistas de contenido de ESE día — a diferencia de
+   * reach, esto SÍ es aditivo entre días (cada día son eventos nuevos,
+   * no un conteo de cuentas únicas) — se puede sumar de forma segura
+   * para el KPI de 7 días en vez de necesitar un total_value aparte.
+   */
+  interactionsToday?: number;
 }
