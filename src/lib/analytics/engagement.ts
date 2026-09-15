@@ -76,3 +76,29 @@ export function followerSeriesByDay(
     .map(([date, followers]) => ({ date, followers }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
+
+/** Los últimos `days` días como YYYY-MM-DD (hoy incluido), en orden ascendente — para series densas con ceros donde no hay dato. */
+export function lastNDays(days: number): string[] {
+  const out: string[] = [];
+  const today = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+/** Cuenta piezas por día de publicación (YYYY-MM-DD), densificado sobre `days` — 0 en los días sin publicaciones. */
+export function postsPerDay(
+  rows: { published_at: string | null }[],
+  days: number
+): { date: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.published_at) continue;
+    const day = row.published_at.slice(0, 10);
+    counts.set(day, (counts.get(day) ?? 0) + 1);
+  }
+  return lastNDays(days).map((date) => ({ date, count: counts.get(date) ?? 0 }));
+}

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Platform, CommentSentiment } from "@/types/db";
-import { engagementRate, latestByContentId, latestByAccountId, followerSeriesByDay } from "./engagement";
+import { engagementRate, latestByContentId, latestByAccountId, followerSeriesByDay, postsPerDay } from "./engagement";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -478,4 +478,88 @@ export async function getCommentsInbox(supabase: DB, filters: OverviewFilters): 
   }
 
   return inbox;
+}
+
+export interface KpiTrends {
+  followers: { current: number; series: number[] };
+  posts7d: { current: number; series: number[] };
+}
+
+/**
+ * Fase 2: series cortas para los sparklines de Resumen.
+ *
+ * A propósito NO incluye "Alcance 7d"/"Interacciones 7d" todavía:
+ * sumar content_metrics.reach de varios posts NO da un alcance de
+ * cuenta válido (cada fila es el alcance acumulado *de ese post*, no
+ * un delta diario — es el mismo tipo de error que se acababa de
+ * corregir para Instagram, ver getInstagramAccountInsights). Lo
+ * correcto es lo que ya hace /settings/composio: pedirle a Meta el
+ * total de cuenta ya deduplicado — pero eso todavía no se persiste en
+ * ninguna tabla (audience_snapshot solo tiene followers/follows/
+ * media_count). Antes de agregar esos dos KPIs hay que decidir si se
+ * extiende audience_snapshot para guardarlos en el sync, o se leen en
+ * vivo — ver conversación con el dueño.
+ */
+export async function getKpiTrends(supabase: DB, filters: OverviewFilters, days = 14): Promise<KpiTrends> {
+  const accounts = await getFilteredAccounts(supabase, filters);
+  const accountIds = accounts.map((a) => a.id);
+  if (accountIds.length === 0) {
+    return { followers: { current: 0, series: [] }, posts7d: { current: 0, series: [] } };
+  }
+
+  const since = new Date(Date.now() - days * DAY_MS).toISOString();
+  const [{ data: audienceRows }, { data: contentRows }] = await Promise.all([
+    supabase
+      .from("audience_snapshot")
+      .select("account_id, captured_at, followers")
+      .in("account_id", accountIds)
+      .gte("captured_at", since)
+      .order("captured_at", { ascending: true }),
+    supabase.from("content").select("published_at").in("account_id", accountIds).gte("published_at", since),
+  ]);
+
+  const followerSeries = followerSeriesByDay(audienceRows ?? []);
+  const perDay = postsPerDay(contentRows ?? [], days);
+  const posts7d = perDay.slice(-7).reduce((sum, d) => sum + d.count, 0);
+
+  return {
+    followers: {
+      current: followerSeries.at(-1)?.followers ?? 0,
+      series: followerSeries.map((d) => d.followers),
+    },
+    posts7d: {
+      current: posts7d,
+      series: perDay.map((d) => d.count),
+    },
+  };
+}
+
+export interface AttentionSummary {
+  unrepliedComments: number;
+  hotLeads: number;
+  pendingDrafts: number;
+}
+
+/**
+ * Fase 2: bloque "Necesita tu atención" del Resumen — reusa
+ * getCommentsInbox (ya trae comentarios de terceros sin nuestras
+ * respuestas) en vez de repetir esa consulta.
+ */
+export async function getAttentionSummary(supabase: DB, filters: OverviewFilters): Promise<AttentionSummary> {
+  const [inbox, draftsResult] = await Promise.all([
+    getCommentsInbox(supabase, filters),
+    (() => {
+      let query = supabase.from("content_calendar").select("id", { count: "exact", head: true }).eq("status", "planned");
+      if (filters.brandId) query = query.eq("brand_id", filters.brandId);
+      if (filters.platform) query = query.eq("platform", filters.platform);
+      return query;
+    })(),
+  ]);
+
+  const pending = inbox.filter((c) => !c.replied);
+  return {
+    unrepliedComments: pending.length,
+    hotLeads: pending.filter((c) => c.sentiment === "lead").length,
+    pendingDrafts: draftsResult.count ?? 0,
+  };
 }
