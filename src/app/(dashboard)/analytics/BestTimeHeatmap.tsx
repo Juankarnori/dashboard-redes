@@ -1,17 +1,17 @@
 import { DAY_LABELS, type BestTimeSlot } from "@/lib/analytics/recommendations";
-import { CHART_COLORS } from "@/lib/chart-theme";
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const SHORT_DAY_LABELS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
-/** Mezcla `accent` con blanco según `t` (0 = blanco, 1 = accent puro) — sin depender de color-mix del navegador. */
+/**
+ * Mezcla `--accent` con `--surface-1` según `t` (0 = superficie pura, 1 =
+ * accent puro) — via color-mix() nativo, así queda correcto en claro y
+ * oscuro sin JS (mezclar contra blanco fijo, como antes, se veía mal en
+ * oscuro). El resto de globals.css ya usa color-mix() (ver pulse-ring),
+ * así que este componente sigue siendo server-only.
+ */
 function accentAlpha(t: number): string {
-  const hex = CHART_COLORS.accent.replace("#", "");
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  const mix = (channel: number) => Math.round(255 + (channel - 255) * t);
-  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+  return `color-mix(in srgb, var(--accent) ${Math.round(t * 100)}%, var(--surface-1))`;
 }
 
 /**

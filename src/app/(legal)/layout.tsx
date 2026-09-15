@@ -6,8 +6,8 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
       <header className="mb-10 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           <span aria-hidden className="pulse-dot h-2 w-2 rounded-full bg-live" />
-          <span className="text-sm font-semibold tracking-tight text-ink-900">
-            Social <span className="font-mono text-accent">Pulse</span>
+          <span className="font-display text-sm font-semibold tracking-tight text-ink-900">
+            Social <span className="text-accent">Pulse</span>
           </span>
         </Link>
         <Link href="/" className="text-xs font-medium text-accent hover:underline">
