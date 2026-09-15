@@ -32,7 +32,13 @@ export async function initiateComposioConnection(
     // brandId como "userId" de Composio: agrupa las conexiones de un
     // mismo negocio bajo un mismo dueño lógico en Composio — no hay
     // multi-tenant real acá (un solo dueño), así que alcanza.
-    const connectionRequest = await composio.connectedAccounts.initiate(brandId, authConfigId, {
+    //
+    // .link(), no .initiate(): confirmado en vivo (no solo leyendo el
+    // código) que .initiate() ya está deprecado en el backend de
+    // Composio para auth configs administrados por Composio — devuelve
+    // 400 "no longer supported... Use POST /api/v3/connected_accounts/
+    // link instead". Mismo shape de retorno, mismo allowMultiple.
+    const connectionRequest = await composio.connectedAccounts.link(brandId, authConfigId, {
       allowMultiple: true, // el negocio puede tener más de una cuenta de la misma red (ver Farmasi + Copiadora)
     });
 

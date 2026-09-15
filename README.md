@@ -321,8 +321,8 @@ se ve afectado mientras tanto.
 
 El shape exacto de `@composio/core` (`composio.tools.execute(slug,
 {userId, connectedAccountId, arguments})`, `composio.connectedAccounts.
-initiate(...)`, `composio.authConfigs.create(...)`) se confirmó leyendo
-el código fuente TypeScript que se instala con el paquete
+link(...)`, `composio.authConfigs.create(...)`) se confirmó leyendo el
+código fuente TypeScript que se instala con el paquete
 (`node_modules/@composio/core/src/`), no adivinado ni copiado de docs
 scrapeadas — la documentación pública no fue 100% consistente entre sí
 en algunos puntos durante la investigación. Los slugs de tools
@@ -332,6 +332,28 @@ catálogo real de Composio, no contra la lista original del brief (que
 tenía al menos un slug con nombre incorrecto —
 `INSTAGRAM_CREATE_MEDIA_CONTAINER` no existe, es
 `INSTAGRAM_POST_IG_USER_MEDIA`).
+
+⚠️ **`composio.connectedAccounts.initiate()` está deprecado** — devuelve
+400 en el backend real ("no longer supported... Use POST
+/api/v3/connected_accounts/link instead") pese a que el propio código
+fuente del SDK todavía lo expone y documenta como si fuera el método
+vigente. Se descubrió probando en vivo contra una API key real, no leyendo
+el código — usá `composio.connectedAccounts.link()` (mismo shape de
+retorno, mismo `allowMultiple`), que es lo que usa
+`initiateComposioConnection` en `settings/composio/actions.ts`. Ojo si en
+el futuro se lee la SDK de nuevo: el código fuente por sí solo no alcanza
+para saber qué endpoints retiró el backend.
+
+Otra cosa importante que costó encontrar: Composio tiene **productos
+separados bajo el mismo login** — "Connect" (`dashboard.composio.dev`,
+para conectar tus propias apps de IA a un MCP, con su propio tipo de
+key) y "Platform" (`Build agents with the Composio SDK`, con API keys de
+*proyecto*, no de *organización* — la página de tokens de organización
+literalmente dice "if you are looking for API keys go to project
+settings"). `@composio/core` necesita la de Platform → Project → API
+Keys específicamente. Si conectaste cuentas antes vía "Connect" (o vía
+un MCP de Composio ya autenticado en otra herramienta), esas conexiones
+NO aparecen bajo el proyecto de Platform — son namespaces distintos.
 
 ## Limitaciones conocidas de TikTok
 
