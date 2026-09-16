@@ -179,6 +179,53 @@ function parsePromotionVariants(text: string): PromotionVariant[] {
     .map((item) => ({ platform: item.platform, title: item.title, body: item.body }));
 }
 
+/**
+ * Borrador de respuesta a un comentario con intención de compra (lead) —
+ * SIEMPRE queda como borrador editable en la UI, nunca se envía sola
+ * (ver ReplyForm.tsx). `styleExample` es la plantilla real que ya usa
+ * el negocio (REPLY_TEMPLATE) — se usa como referencia de tono/CTA en
+ * vez de mantener un perfil de "voz de marca" aparte, que no existe
+ * hoy en el proyecto.
+ */
+export async function generateCommentReplySuggestion(
+  brandName: string,
+  commentText: string,
+  styleExample: string
+): Promise<string> {
+  const client = getClient();
+
+  const message = await client.messages.create({
+    model: MODEL,
+    max_tokens: 300,
+    messages: [
+      {
+        role: "user",
+        content: `Sos quien responde comentarios de Instagram/Facebook del negocio "${brandName}".
+
+Un cliente potencial comentó esto (parece interesado en comprar):
+"${commentText}"
+
+Este es un ejemplo real del tono/estilo que ya usa el negocio para responder:
+"${styleExample}"
+
+Escribí UNA respuesta corta (máx. 2-3 frases, menos de 250 caracteres), cálida y
+natural en español, que responda a lo que preguntó y lo invite a seguir la
+conversación (por WhatsApp si el ejemplo lo usa así). Sin hashtags, sin firmarlo,
+sin comillas. Respondé ÚNICAMENTE con el texto de la respuesta, nada más.`,
+      },
+    ],
+  });
+
+  const text = message.content
+    .filter((block): block is Anthropic.TextBlock => block.type === "text")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+
+  if (!text) throw new Error("Claude no devolvió una sugerencia.");
+  return text;
+}
+
 export interface TrendResult {
   topic: string;
   summary: string;

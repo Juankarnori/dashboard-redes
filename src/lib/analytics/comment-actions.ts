@@ -6,6 +6,8 @@ import { decryptToken } from "@/lib/crypto";
 import { resolveProviderForAccount } from "@/lib/platforms";
 import { refreshAccountTokenIfNeeded } from "@/lib/platforms/token-refresh";
 import { syncAccountComments } from "@/lib/analytics/comments-sync";
+import { generateCommentReplySuggestion } from "@/lib/anthropic/client";
+import { REPLY_TEMPLATE } from "@/lib/analytics/reply-template";
 
 export interface ReplyToCommentResult {
   error?: string;
@@ -89,6 +91,41 @@ export async function replyToComment(commentId: string, message: string): Promis
   revalidatePath(`/content/${comment.content_id}`);
   revalidatePath("/comments");
   return {};
+}
+
+export interface SuggestCommentReplyResult {
+  error?: string;
+  suggestion?: string;
+}
+
+/**
+ * Borrador de respuesta con IA para un comentario — nunca se envía sola,
+ * solo llena el textarea de ReplyForm para que el dueño la revise/edite
+ * antes de tocar "Enviar". Pensada para leads (ver ReplyForm.tsx,
+ * isLead), pero no depende de eso: si se llama sobre cualquier
+ * comentario, igual redacta algo razonable.
+ */
+export async function suggestCommentReply(commentId: string): Promise<SuggestCommentReplyResult> {
+  const supabase = await createClient();
+
+  const { data: comment } = await supabase.from("comments").select("id, content_id, text").eq("id", commentId).maybeSingle();
+  if (!comment) return { error: "Comentario no encontrado." };
+
+  const { data: content } = await supabase.from("content").select("account_id").eq("id", comment.content_id).maybeSingle();
+  if (!content) return { error: "Contenido no encontrado." };
+
+  const { data: account } = await supabase.from("accounts").select("brand_id").eq("id", content.account_id).maybeSingle();
+  if (!account) return { error: "Cuenta no encontrada." };
+
+  const { data: brand } = await supabase.from("brands").select("name").eq("id", account.brand_id).maybeSingle();
+
+  try {
+    const suggestion = await generateCommentReplySuggestion(brand?.name ?? "el negocio", comment.text, REPLY_TEMPLATE);
+    return { suggestion };
+  } catch (err) {
+    console.error(`No se pudo generar una sugerencia para el comentario ${commentId}:`, err);
+    return { error: "No se pudo generar una sugerencia. Intentá de nuevo o escribí la respuesta a mano." };
+  }
 }
 
 export interface RefreshCommentsResult {

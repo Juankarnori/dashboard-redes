@@ -93,7 +93,12 @@ export function CommentInboxRow({
           </Link>
         </div>
 
-        <ReplyForm commentId={comment.id} replied={comment.replied} onReplied={onReplied} />
+        <ReplyForm
+          commentId={comment.id}
+          replied={comment.replied}
+          onReplied={onReplied}
+          isLead={comment.sentiment === "lead"}
+        />
       </div>
     </div>
   );
