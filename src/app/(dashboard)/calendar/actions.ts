@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { decryptToken } from "@/lib/crypto";
-import { getProvider } from "@/lib/platforms";
+import { resolveProviderForAccount } from "@/lib/platforms";
 import { refreshAccountTokenIfNeeded } from "@/lib/platforms/token-refresh";
 import { getCalendarMediaUrl, getProxiedMediaUrl } from "@/lib/supabase/storage";
 import type { Platform } from "@/types/db";
@@ -265,7 +265,7 @@ export async function startPublish(calendarItemId: string): Promise<PublishActio
     return { error: "Escribí el texto que se va a publicar." };
   }
 
-  const provider = getProvider(account.platform);
+  const { provider, composio } = await resolveProviderForAccount(supabase, account.id, account.platform);
   if (!provider.publishContent) {
     return { error: `Publicar todavía no está soportado para ${account.platform}.` };
   }
@@ -284,6 +284,7 @@ export async function startPublish(calendarItemId: string): Promise<PublishActio
         accessToken,
         refreshToken,
         tokenExpiresAt: account.token_expires_at,
+        composio,
       },
       account.id
     );
@@ -317,14 +318,14 @@ export async function pollPublishStatus(calendarItemId: string): Promise<Publish
 
   if (!item.external_post_id) return { error: "No hay una publicación en curso para esta pieza." };
 
-  const provider = getProvider(account.platform);
+  const { provider, composio } = await resolveProviderForAccount(supabase, account.id, account.platform);
   if (!provider.checkPublishStatus) {
     return { error: `Consultar estado de publicación no aplica para ${account.platform}.` };
   }
 
   try {
     const accessToken = decryptToken(account.access_token);
-    const providerAccount = { id: account.id, externalId: account.external_id, accessToken };
+    const providerAccount = { id: account.id, externalId: account.external_id, accessToken, composio };
     const result = await provider.checkPublishStatus(item.external_post_id, providerAccount);
     return await savePublishResult(supabase, calendarItemId, result);
   } catch (err) {
