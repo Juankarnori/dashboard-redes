@@ -8,9 +8,19 @@ on:
     # Historias: cada hora, porque expiran a las 24h y una corrida cada
     # 4h se las puede perder si se publican y borran entre medio.
     - cron: "15 * * * *"
-    # Comentarios: cada 30 min, para priorizar leads/quejas sin esperar
-    # al sync completo.
-    - cron: "*/30 * * * *"
+    # Comentarios: cada 10 min (antes 30) — Composio no tiene Triggers/
+    # webhooks para IG/FB/TikTok todavía (composio.triggers.listTypes
+    # devuelve [] para las 3, verificado en vivo — Fase 3), así que la
+    # bandeja de leads depende 100% de este polling. 10 min es el punto
+    # dulce entre "casi en tiempo real" y el volumen de llamadas del
+    # plan gratis de GitHub Actions (2000 min/mes): con N cuentas, este
+    # cron solo son ~144 corridas/día — el costo real es N llamadas a
+    # /api/sync por corrida, cada una barriendo el contenido de los
+    # últimos COMMENTS_LOOKBACK_DAYS (14 días, ver comments-sync.ts).
+    # Si hace falta más rápido, 5 min es el siguiente escalón razonable;
+    # bajar de ahí empieza a competir en serio con el resto del tier
+    # gratis (500 min por corrida de otros jobs, límite de la cuenta).
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       scope:
@@ -31,7 +41,7 @@ jobs:
         run: |
           if [ "${{ github.event.schedule }}" = "15 * * * *" ]; then
             echo "value=stories" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "*/30 * * * *" ]; then
+          elif [ "${{ github.event.schedule }}" = "*/10 * * * *" ]; then
             echo "value=comments" >> "$GITHUB_OUTPUT"
           elif [ -n "${{ github.event.inputs.scope }}" ]; then
             echo "value=${{ github.event.inputs.scope }}" >> "$GITHUB_OUTPUT"
