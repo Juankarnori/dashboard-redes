@@ -1,4 +1,12 @@
-import type { PlatformProvider, ProviderAccount, ProviderAudienceSnapshot, ProviderComment, ProviderContentItem } from "./types";
+import type {
+  PlatformProvider,
+  ProviderAccount,
+  ProviderAudienceSnapshot,
+  ProviderComment,
+  ProviderContentItem,
+  PublishInput,
+  PublishResult,
+} from "./types";
 import {
   getFacebookPages,
   getFacebookPageProfile,
@@ -7,6 +15,10 @@ import {
   getFacebookPostViews,
   getFacebookComments,
   postFacebookCommentReply,
+  createFacebookPhotoPost,
+  createFacebookVideoPost,
+  createFacebookMultiPhotoPost,
+  getFacebookPostPermalink,
 } from "@/lib/social/facebook";
 
 /**
@@ -82,5 +94,38 @@ export const facebookComposioProvider: PlatformProvider = {
   async postCommentReply(commentExternalId: string, message: string, account: ProviderAccount): Promise<string> {
     const { userId, connectedAccountId } = requireComposio(account);
     return postFacebookCommentReply(userId, connectedAccountId, commentExternalId, message);
+  },
+
+  // Mismo requisito que el provider directo: siempre hace falta al
+  // menos un archivo (ver lib/platforms/facebook.ts) — no se agrega acá
+  // un camino de "solo texto" que el directo no tiene, para no crear
+  // una asimetría de comportamiento entre ambos providers.
+  async publishContent(input: PublishInput, account: ProviderAccount): Promise<PublishResult> {
+    if (input.media.length === 0) throw new Error("Falta el archivo a publicar.");
+    const { userId, connectedAccountId } = requireComposio(account);
+    const pageId = await resolvePageId(userId, connectedAccountId, account.externalId);
+
+    if (input.media.length > 1) {
+      if (input.media.some((m) => m.type !== "image")) {
+        throw new Error("El post multi-foto de Facebook solo acepta imágenes, no video.");
+      }
+      const postId = await createFacebookMultiPhotoPost(
+        userId,
+        connectedAccountId,
+        pageId,
+        input.media.map((m) => m.url),
+        input.caption
+      );
+      const permalink = await getFacebookPostPermalink(userId, connectedAccountId, pageId, postId);
+      return { kind: "published", externalId: postId, permalink: permalink ?? undefined };
+    }
+
+    const [item] = input.media;
+    const postId =
+      item.type === "video"
+        ? await createFacebookVideoPost(userId, connectedAccountId, pageId, item.url, input.caption)
+        : await createFacebookPhotoPost(userId, connectedAccountId, pageId, item.url, input.caption);
+    const permalink = await getFacebookPostPermalink(userId, connectedAccountId, pageId, postId);
+    return { kind: "published", externalId: postId, permalink: permalink ?? undefined };
   },
 };

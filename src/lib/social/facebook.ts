@@ -271,3 +271,116 @@ export async function postFacebookCommentReply(
   const data = result.data as { id: string };
   return data.id;
 }
+
+/**
+ * Los tools de publicar NO son consistentes entre sí sobre qué forma de
+ * id devuelven (verificado en vivo, no asumido): FACEBOOK_CREATE_POST
+ * devuelve el compuesto `pageId_postId` directo, pero
+ * FACEBOOK_CREATE_PHOTO_POST devuelve solo el numérico simple pese a
+ * que su propia descripción dice lo contrario ("Returns a composite
+ * post_id") — FACEBOOK_GET_POST rechaza el numérico simple con un 400
+ * explícito. Esto normaliza cualquiera de los dos a compuesto.
+ */
+function toCompoundPostId(pageId: string, id: string): string {
+  return id.includes("_") ? id : `${pageId}_${id}`;
+}
+
+/** Permalink de un post ya publicado. */
+export async function getFacebookPostPermalink(
+  userId: string,
+  connectedAccountId: string,
+  pageId: string,
+  postId: string
+): Promise<string | null> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("FACEBOOK_GET_POST", {
+    userId,
+    connectedAccountId,
+    arguments: { post_id: toCompoundPostId(pageId, postId) },
+  });
+  if (!result.successful) return null;
+  const data = result.data as { permalink_url?: string };
+  return data.permalink_url ?? null;
+}
+
+/** Post de solo texto/enlace. */
+export async function createFacebookPost(
+  userId: string,
+  connectedAccountId: string,
+  pageId: string,
+  message: string
+): Promise<string> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("FACEBOOK_CREATE_POST", {
+    userId,
+    connectedAccountId,
+    arguments: { page_id: pageId, message },
+  });
+  if (!result.successful) throw new Error(result.error ?? "FACEBOOK_CREATE_POST falló");
+  const data = result.data as { id: string };
+  return toCompoundPostId(pageId, data.id);
+}
+
+/** Post de una sola foto. */
+export async function createFacebookPhotoPost(
+  userId: string,
+  connectedAccountId: string,
+  pageId: string,
+  imageUrl: string,
+  caption: string
+): Promise<string> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("FACEBOOK_CREATE_PHOTO_POST", {
+    userId,
+    connectedAccountId,
+    arguments: { page_id: pageId, url: imageUrl, message: caption },
+  });
+  if (!result.successful) throw new Error(result.error ?? "FACEBOOK_CREATE_PHOTO_POST falló");
+  const data = result.data as { id: string };
+  return toCompoundPostId(pageId, data.id);
+}
+
+/** Post de un solo video. */
+export async function createFacebookVideoPost(
+  userId: string,
+  connectedAccountId: string,
+  pageId: string,
+  videoUrl: string,
+  caption: string
+): Promise<string> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("FACEBOOK_CREATE_VIDEO_POST", {
+    userId,
+    connectedAccountId,
+    arguments: { page_id: pageId, file_url: videoUrl, description: caption },
+  });
+  if (!result.successful) throw new Error(result.error ?? "FACEBOOK_CREATE_VIDEO_POST falló");
+  const data = result.data as { id: string };
+  return toCompoundPostId(pageId, data.id);
+}
+
+/**
+ * Post multi-foto (carrusel). ⚠️ A diferencia de CREATE_PHOTO_POST, este
+ * tool no tiene parámetro `published` — según su propia descripción
+ * "publishes immediately" siempre. No se pudo verificar en vivo sin
+ * publicar de verdad (a diferencia del resto de esta fase, que sí se
+ * probó con published:false o se limpió después) — implementado tal
+ * como lo documenta el schema, sin ejercitarlo en vivo.
+ */
+export async function createFacebookMultiPhotoPost(
+  userId: string,
+  connectedAccountId: string,
+  pageId: string,
+  imageUrls: string[],
+  caption: string
+): Promise<string> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("FACEBOOK_CREATE_MULTI_PHOTO_POST", {
+    userId,
+    connectedAccountId,
+    arguments: { page_id: pageId, photo_urls: imageUrls, message: caption },
+  });
+  if (!result.successful) throw new Error(result.error ?? "FACEBOOK_CREATE_MULTI_PHOTO_POST falló");
+  const data = result.data as { id: string };
+  return toCompoundPostId(pageId, data.id);
+}
