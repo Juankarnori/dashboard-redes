@@ -1,5 +1,12 @@
-import type { PlatformProvider, ProviderAccount, ProviderAudienceSnapshot, ProviderContentItem } from "./types";
-import { getInstagramProfile, getInstagramMedia, getInstagramMediaInsights, getInstagramAccountInsights } from "@/lib/social/instagram";
+import type { PlatformProvider, ProviderAccount, ProviderAudienceSnapshot, ProviderComment, ProviderContentItem } from "./types";
+import {
+  getInstagramProfile,
+  getInstagramMedia,
+  getInstagramMediaInsights,
+  getInstagramAccountInsights,
+  getInstagramMediaComments,
+  postInstagramCommentReply,
+} from "@/lib/social/instagram";
 
 /**
  * Instagram vía Composio, con la misma forma que instagramProvider
@@ -7,11 +14,12 @@ import { getInstagramProfile, getInstagramMedia, getInstagramMediaInsights, getI
  * diferencia — ver composio-adapter.ts (Fase 2) para cómo se elige uno
  * u otro por cuenta.
  *
- * Solo implementa fetchContent/fetchAudience (lo único que
- * lib/social/instagram.ts sabe hacer hoy): fetchComments,
- * postCommentReply y publishContent quedan sin implementar a propósito
- * — el merge de composio-adapter.ts cae al provider directo para esos
- * hasta que tengan su equivalente Composio (Fase 3).
+ * Fase 3: fetchComments y postCommentReply verificados en vivo contra
+ * comentarios reales (creados y borrados como parte de la
+ * verificación, no quedaron rastros). publishContent/checkPublishStatus
+ * quedan sin implementar todavía en este archivo — el merge de
+ * composio-adapter.ts cae al provider directo para esos hasta que
+ * lleguen en el siguiente commit de esta misma fase.
  */
 function requireComposio(account: ProviderAccount) {
   if (!account.composio) {
@@ -78,5 +86,15 @@ export const instagramComposioProvider: PlatformProvider = {
       interactionsToday: daily.totalInteractions ?? undefined,
       reach7d: weekly.reach ?? undefined,
     };
+  },
+
+  async fetchComments(contentExternalId: string, account: ProviderAccount): Promise<ProviderComment[]> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    return getInstagramMediaComments(userId, connectedAccountId, contentExternalId);
+  },
+
+  async postCommentReply(commentExternalId: string, message: string, account: ProviderAccount): Promise<string> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    return postInstagramCommentReply(userId, connectedAccountId, commentExternalId, message);
   },
 };

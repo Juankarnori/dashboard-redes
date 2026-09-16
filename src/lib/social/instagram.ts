@@ -1,5 +1,5 @@
 import { getComposioClient } from "./client";
-import type { ProviderContentItem } from "@/lib/platforms/types";
+import type { ProviderContentItem, ProviderComment } from "@/lib/platforms/types";
 
 /**
  * Instagram vía Composio — Fase 1 (proof of concept, solo lectura).
@@ -198,4 +198,87 @@ export async function getInstagramMediaInsights(
     shares: byMetric.get("shares") ?? null,
     totalInteractions: byMetric.get("total_interactions") ?? null,
   };
+}
+
+/**
+ * Trae TODOS los comentarios de una pieza (nivel superior + respuestas)
+ * en un solo llamado — verificado en vivo: pedir `parent_id` en el
+ * listado plano de INSTAGRAM_GET_IG_MEDIA_COMMENTS ya devuelve las
+ * respuestas mezcladas con `parent_id` seteado, sin hacer falta un
+ * segundo llamado a INSTAGRAM_GET_IG_COMMENT_REPLIES por comentario
+ * (que sería 1 llamado extra por cada comentario con respuestas).
+ */
+export async function getInstagramMediaComments(
+  userId: string,
+  connectedAccountId: string,
+  mediaId: string
+): Promise<ProviderComment[]> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("INSTAGRAM_GET_IG_MEDIA_COMMENTS", {
+    userId,
+    connectedAccountId,
+    arguments: { ig_media_id: mediaId, fields: "id,text,username,timestamp,like_count,from,parent_id", limit: 100 },
+  });
+  if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_GET_IG_MEDIA_COMMENTS falló");
+
+  const items = (result.data.data as Record<string, unknown>[] | undefined) ?? [];
+  return items.map((c) => {
+    const from = c.from as { id?: string } | undefined;
+    return {
+      externalId: String(c.id),
+      parentExternalId: (c.parent_id as string) || undefined,
+      authorName: (c.username as string) ?? undefined,
+      authorPlatformId: from?.id ?? undefined,
+      text: (c.text as string) ?? "",
+      likeCount: (c.like_count as number) ?? undefined,
+      commentedAt: (c.timestamp as string) ?? undefined,
+    };
+  });
+}
+
+/**
+ * Límites reales de INSTAGRAM_POST_IG_COMMENT_REPLIES (verificados
+ * contra el schema del tool, no inventados): 300 caracteres, máx. 4
+ * hashtags, máx. 1 URL, no puede ser todo mayúsculas. Se valida acá
+ * para dar un error claro en la UI en vez de que Composio lo rebote con
+ * un 400 genérico.
+ */
+export function validateInstagramReply(message: string): string {
+  const trimmed = message.trim();
+  if (!trimmed) throw new Error("Escribí una respuesta.");
+  if (trimmed.length > 300) {
+    throw new Error(`Instagram permite hasta 300 caracteres en una respuesta (esta tiene ${trimmed.length}).`);
+  }
+  const hashtags = trimmed.match(/#\w+/g) ?? [];
+  if (hashtags.length > 4) {
+    throw new Error(`Instagram permite hasta 4 hashtags por respuesta (esta tiene ${hashtags.length}).`);
+  }
+  const urls = trimmed.match(/https?:\/\/\S+/g) ?? [];
+  if (urls.length > 1) {
+    throw new Error(`Instagram permite hasta 1 URL por respuesta (esta tiene ${urls.length}).`);
+  }
+  if (/[A-Z]/.test(trimmed) && !/[a-z]/.test(trimmed)) {
+    throw new Error("Instagram no permite respuestas que sean todo en mayúsculas.");
+  }
+  return trimmed;
+}
+
+/** Responde un comentario. Devuelve el id del comentario de respuesta creado. */
+export async function postInstagramCommentReply(
+  userId: string,
+  connectedAccountId: string,
+  commentId: string,
+  message: string
+): Promise<string> {
+  const validated = validateInstagramReply(message);
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("INSTAGRAM_POST_IG_COMMENT_REPLIES", {
+    userId,
+    connectedAccountId,
+    arguments: { ig_comment_id: commentId, message: validated },
+  });
+  if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_POST_IG_COMMENT_REPLIES falló");
+
+  const data = result.data as { id: string };
+  return data.id;
 }
