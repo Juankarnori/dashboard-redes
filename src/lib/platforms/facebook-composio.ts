@@ -1,10 +1,12 @@
-import type { PlatformProvider, ProviderAccount, ProviderAudienceSnapshot, ProviderContentItem } from "./types";
+import type { PlatformProvider, ProviderAccount, ProviderAudienceSnapshot, ProviderComment, ProviderContentItem } from "./types";
 import {
   getFacebookPages,
   getFacebookPageProfile,
   getFacebookPageInsights,
   getFacebookPagePosts,
   getFacebookPostViews,
+  getFacebookComments,
+  postFacebookCommentReply,
 } from "@/lib/social/facebook";
 
 /**
@@ -70,5 +72,15 @@ export const facebookComposioProvider: PlatformProvider = {
       // vez de pedir un total aparte (ver getKpiTrends).
       interactionsToday: daily.mediaViews ?? undefined,
     };
+  },
+
+  async fetchComments(contentExternalId: string, account: ProviderAccount): Promise<ProviderComment[]> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    return getFacebookComments(userId, connectedAccountId, contentExternalId);
+  },
+
+  async postCommentReply(commentExternalId: string, message: string, account: ProviderAccount): Promise<string> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    return postFacebookCommentReply(userId, connectedAccountId, commentExternalId, message);
   },
 };

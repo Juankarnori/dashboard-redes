@@ -1,5 +1,5 @@
 import { getComposioClient } from "./client";
-import type { ProviderContentItem } from "@/lib/platforms/types";
+import type { ProviderContentItem, ProviderComment } from "@/lib/platforms/types";
 
 /**
  * Facebook (Página) vía Composio — mismo patrón que instagram.ts: userId
@@ -182,4 +182,92 @@ export async function getFacebookPagePosts(
       },
     };
   });
+}
+
+/**
+ * El id de comentario/respuesta que devuelve Facebook es compuesto
+ * (`<algo>_<idNumérico>`) — pero el prefijo NO es estable: el mismo
+ * comentario aparece como `postId_commentId` si se lo trae de la lista
+ * plana del post, y como `parentCommentId_replyId` si se lo trae
+ * anidado bajo su padre (verificado en vivo, ambos casos reales). Lo
+ * único estable es el segmento final después del último "_": ese es el
+ * id numérico simple que hay que usar como `object_id` al responder —
+ * mandar el compuesto tal cual falla con "page not found" porque
+ * Composio interpreta el prefijo como un page id (gotcha real,
+ * confirmado en vivo antes de este commit).
+ */
+function extractFacebookCommentId(id: string): string {
+  const idx = id.lastIndexOf("_");
+  return idx === -1 ? id : id.slice(idx + 1);
+}
+
+/**
+ * Comentarios de un post (o respuestas de un comentario) — un solo
+ * llamado con expansión anidada `comments{...}` trae también las
+ * respuestas, igual que la integración directa (ver
+ * lib/meta/facebook.ts, fetchFacebookComments) — evita 1 llamado extra
+ * por comentario con respuestas.
+ */
+export async function getFacebookComments(
+  userId: string,
+  connectedAccountId: string,
+  objectId: string
+): Promise<ProviderComment[]> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("FACEBOOK_GET_COMMENTS", {
+    userId,
+    connectedAccountId,
+    arguments: {
+      object_id: objectId,
+      fields: "id,message,created_time,from,like_count,comments{id,message,created_time,from,like_count}",
+    },
+  });
+  if (!result.successful) return []; // posts sin comentarios habilitados, etc. — no fatal, ver el directo
+
+  const flat: ProviderComment[] = [];
+  const topLevel = (result.data.data as Record<string, unknown>[] | undefined) ?? [];
+  for (const c of topLevel) {
+    const from = c.from as { id?: string; name?: string } | undefined;
+    flat.push({
+      externalId: String(c.id),
+      authorName: from?.name,
+      authorPlatformId: from?.id,
+      text: (c.message as string) ?? "",
+      likeCount: c.like_count as number | undefined,
+      commentedAt: c.created_time as string | undefined,
+    });
+    const replies = (c.comments as { data?: Record<string, unknown>[] } | undefined)?.data ?? [];
+    for (const r of replies) {
+      const rFrom = r.from as { id?: string; name?: string } | undefined;
+      flat.push({
+        externalId: String(r.id),
+        parentExternalId: String(c.id),
+        authorName: rFrom?.name,
+        authorPlatformId: rFrom?.id,
+        text: (r.message as string) ?? "",
+        likeCount: r.like_count as number | undefined,
+        commentedAt: r.created_time as string | undefined,
+      });
+    }
+  }
+  return flat;
+}
+
+/** Responde un comentario. Devuelve el id (compuesto) de la respuesta creada. */
+export async function postFacebookCommentReply(
+  userId: string,
+  connectedAccountId: string,
+  commentId: string,
+  message: string
+): Promise<string> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("FACEBOOK_CREATE_COMMENT", {
+    userId,
+    connectedAccountId,
+    arguments: { object_id: extractFacebookCommentId(commentId), message },
+  });
+  if (!result.successful) throw new Error(result.error ?? "FACEBOOK_CREATE_COMMENT falló");
+
+  const data = result.data as { id: string };
+  return data.id;
 }
