@@ -282,3 +282,137 @@ export async function postInstagramCommentReply(
   const data = result.data as { id: string };
   return data.id;
 }
+
+export interface CreateContainerInput {
+  imageUrl?: string;
+  videoUrl?: string;
+  mediaType?: "REELS" | "CAROUSEL" | "STORIES";
+  caption?: string;
+  isCarouselItem?: boolean;
+}
+
+/** Crea un container (imagen/reel/hijo de carrusel) — primer paso del publish en 2 pasos. No publica nada todavía. */
+export async function createInstagramContainer(
+  userId: string,
+  connectedAccountId: string,
+  input: CreateContainerInput
+): Promise<string> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("INSTAGRAM_POST_IG_USER_MEDIA", {
+    userId,
+    connectedAccountId,
+    arguments: {
+      ig_user_id: "me",
+      image_url: input.imageUrl,
+      video_url: input.videoUrl,
+      media_type: input.mediaType,
+      caption: input.caption,
+      is_carousel_item: input.isCarouselItem,
+    },
+  });
+  if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_POST_IG_USER_MEDIA falló");
+  const data = result.data as { id: string };
+  return data.id;
+}
+
+/** Crea el container padre de un carrusel a partir de containers hijo ya creados (2-10). */
+export async function createInstagramCarouselContainer(
+  userId: string,
+  connectedAccountId: string,
+  childContainerIds: string[],
+  caption?: string
+): Promise<string> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("INSTAGRAM_CREATE_CAROUSEL_CONTAINER", {
+    userId,
+    connectedAccountId,
+    arguments: { ig_user_id: "me", children: childContainerIds, caption },
+  });
+  if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_CREATE_CAROUSEL_CONTAINER falló");
+  const data = result.data as { id: string };
+  return data.id;
+}
+
+export type PublishAttemptResult =
+  | { status: "published"; mediaId: string }
+  | { status: "processing" };
+
+/**
+ * Intenta publicar un container con `max_wait_seconds: 0` — a
+ * diferencia del comportamiento por defecto del tool (esperar hasta
+ * 300s internamente, lo que no entra en el timeout de 10s de Vercel
+ * Hobby), esto pide un intento inmediato: si el container ya está
+ * FINISHED publica de una, si no devuelve el error 9007 documentado
+ * por el propio tool ("Setting this to 0 skips all status checks...
+ * will fail with error 9007 if the container is still processing").
+ * Tratamos cualquier error que mencione 9007 como "sigue procesando",
+ * no como una falla real — el llamador (checkPublishStatus) reintenta
+ * este mismo método hasta que Meta termine.
+ *
+ * Nota de verificación: probado en vivo el camino "ya está listo → se
+ * publica" (imagen, procesa casi instantáneo). El camino "todavía
+ * procesando → error 9007" está implementado tal como lo documenta el
+ * propio schema del tool, pero no se forzó en vivo (necesitaría un
+ * video real de a Reels lento para procesar) — si el texto exacto del
+ * error de Meta no incluyera "9007" de la forma esperada, el efecto
+ * sería que el intento se trate como falla real en vez de "seguir
+ * esperando" (visible como error claro en la UI, no un fallo silencioso).
+ */
+export async function attemptPublishInstagramContainer(
+  userId: string,
+  connectedAccountId: string,
+  containerId: string
+): Promise<PublishAttemptResult> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH", {
+    userId,
+    connectedAccountId,
+    arguments: { ig_user_id: "me", creation_id: containerId, max_wait_seconds: 0 },
+  });
+
+  if (!result.successful) {
+    if (result.error?.includes("9007")) return { status: "processing" };
+    throw new Error(result.error ?? "INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH falló");
+  }
+
+  const data = result.data as { id: string };
+  return { status: "published", mediaId: data.id };
+}
+
+/** Permalink de un media ya publicado. */
+export async function getInstagramPermalink(userId: string, connectedAccountId: string, mediaId: string): Promise<string | null> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("INSTAGRAM_GET_IG_MEDIA", {
+    userId,
+    connectedAccountId,
+    arguments: { ig_media_id: mediaId, fields: "permalink" },
+  });
+  if (!result.successful) return null;
+  const data = result.data as { permalink?: string };
+  return data.permalink ?? null;
+}
+
+export interface PublishingLimit {
+  quotaUsage: number | null;
+  quotaCap: number | null;
+}
+
+/** Cuota de publicación de las últimas 24h — chequear antes de publicar en lote. */
+export async function getInstagramPublishingLimit(userId: string, connectedAccountId: string): Promise<PublishingLimit> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("INSTAGRAM_GET_IG_USER_CONTENT_PUBLISHING_LIMIT", {
+    userId,
+    connectedAccountId,
+    arguments: { ig_user_id: "me" },
+  });
+  if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_GET_IG_USER_CONTENT_PUBLISHING_LIMIT falló");
+
+  // Verificado en vivo: result.data.data es un array de 1 elemento
+  // {quota_usage, config: {quota_total, quota_duration}} — no el shape
+  // anidado que hubiera adivinado por el nombre del campo.
+  const entry = (result.data.data as { quota_usage?: number; config?: { quota_total?: number } }[] | undefined)?.[0];
+  return {
+    quotaUsage: entry?.quota_usage ?? null,
+    quotaCap: entry?.config?.quota_total ?? null,
+  };
+}

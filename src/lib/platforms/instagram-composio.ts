@@ -1,4 +1,12 @@
-import type { PlatformProvider, ProviderAccount, ProviderAudienceSnapshot, ProviderComment, ProviderContentItem } from "./types";
+import type {
+  PlatformProvider,
+  ProviderAccount,
+  ProviderAudienceSnapshot,
+  ProviderComment,
+  ProviderContentItem,
+  PublishInput,
+  PublishResult,
+} from "./types";
 import {
   getInstagramProfile,
   getInstagramMedia,
@@ -6,7 +14,13 @@ import {
   getInstagramAccountInsights,
   getInstagramMediaComments,
   postInstagramCommentReply,
+  createInstagramContainer,
+  createInstagramCarouselContainer,
+  attemptPublishInstagramContainer,
+  getInstagramPermalink,
 } from "@/lib/social/instagram";
+
+const IG_CAROUSEL_MAX_ITEMS = 10;
 
 /**
  * Instagram vía Composio, con la misma forma que instagramProvider
@@ -14,12 +28,15 @@ import {
  * diferencia — ver composio-adapter.ts (Fase 2) para cómo se elige uno
  * u otro por cuenta.
  *
- * Fase 3: fetchComments y postCommentReply verificados en vivo contra
- * comentarios reales (creados y borrados como parte de la
- * verificación, no quedaron rastros). publishContent/checkPublishStatus
- * quedan sin implementar todavía en este archivo — el merge de
- * composio-adapter.ts cae al provider directo para esos hasta que
- * lleguen en el siguiente commit de esta misma fase.
+ * Fase 3: fetchComments, postCommentReply, publishContent y
+ * checkPublishStatus verificados en vivo contra la cuenta real (un
+ * comentario de prueba respondido y borrado; un post de prueba real
+ * publicado con max_wait_seconds:0 y borrado a mano desde la app — ver
+ * el commit de esta pieza para el detalle). El camino "container
+ * todavía procesando" (error 9007) está implementado tal como lo
+ * documenta el propio schema de INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH,
+ * pero no se forzó en vivo — requeriría un video real lento de
+ * procesar; ver la nota en attemptPublishInstagramContainer.
  */
 function requireComposio(account: ProviderAccount) {
   if (!account.composio) {
@@ -97,4 +114,48 @@ export const instagramComposioProvider: PlatformProvider = {
     const { userId, connectedAccountId } = requireComposio(account);
     return postInstagramCommentReply(userId, connectedAccountId, commentExternalId, message);
   },
+
+  async publishContent(input: PublishInput, account: ProviderAccount): Promise<PublishResult> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    if (input.media.length === 0) throw new Error("Falta el archivo a publicar.");
+
+    if (input.media.length === 1) {
+      const [item] = input.media;
+      const containerId = await createInstagramContainer(userId, connectedAccountId, {
+        imageUrl: item.type === "image" ? item.url : undefined,
+        videoUrl: item.type === "video" ? item.url : undefined,
+        mediaType: item.type === "video" ? "REELS" : undefined,
+        caption: input.caption,
+      });
+      return finishOrKeepProcessing(userId, connectedAccountId, containerId);
+    }
+
+    // Carrusel: solo imágenes, mismo tope que el provider directo.
+    if (input.media.some((m) => m.type !== "image")) {
+      throw new Error("El carrusel de Instagram solo acepta imágenes, no video.");
+    }
+    if (input.media.length > IG_CAROUSEL_MAX_ITEMS) {
+      throw new Error(`Instagram acepta hasta ${IG_CAROUSEL_MAX_ITEMS} imágenes por carrusel.`);
+    }
+
+    const children = await Promise.all(
+      input.media.map((m) => createInstagramContainer(userId, connectedAccountId, { imageUrl: m.url, isCarouselItem: true }))
+    );
+    const containerId = await createInstagramCarouselContainer(userId, connectedAccountId, children, input.caption);
+    return finishOrKeepProcessing(userId, connectedAccountId, containerId);
+  },
+
+  async checkPublishStatus(containerId: string, account: ProviderAccount): Promise<PublishResult> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    return finishOrKeepProcessing(userId, connectedAccountId, containerId);
+  },
 };
+
+/** Común a publishContent y checkPublishStatus: intenta publicar; si Meta sigue procesando, avisa que sigue en curso. */
+async function finishOrKeepProcessing(userId: string, connectedAccountId: string, containerId: string): Promise<PublishResult> {
+  const attempt = await attemptPublishInstagramContainer(userId, connectedAccountId, containerId);
+  if (attempt.status === "processing") return { kind: "processing", containerId };
+
+  const permalink = await getInstagramPermalink(userId, connectedAccountId, attempt.mediaId);
+  return { kind: "published", externalId: attempt.mediaId, permalink: permalink ?? undefined };
+}
