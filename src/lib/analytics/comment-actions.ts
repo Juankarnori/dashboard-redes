@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { decryptToken } from "@/lib/crypto";
-import { getProvider } from "@/lib/platforms";
+import { resolveProviderForAccount } from "@/lib/platforms";
+import { refreshAccountTokenIfNeeded } from "@/lib/platforms/token-refresh";
 import { syncAccountComments } from "@/lib/analytics/comments-sync";
 
 export interface ReplyToCommentResult {
@@ -38,19 +39,32 @@ export async function replyToComment(commentId: string, message: string): Promis
 
   const { data: account } = await supabase
     .from("accounts")
-    .select("id, platform, external_id, access_token")
+    .select("*")
     .eq("id", content.account_id)
     .maybeSingle();
   if (!account) return { error: "Cuenta no encontrada." };
 
-  const provider = getProvider(account.platform);
+  const { provider, composio } = await resolveProviderForAccount(supabase, account.id, account.platform);
   if (!provider.postCommentReply) {
     return { error: `Responder comentarios todavía no está soportado para ${account.platform}.` };
   }
 
   try {
     const accessToken = decryptToken(account.access_token);
-    const providerAccount = { id: account.id, externalId: account.external_id, accessToken };
+    const refreshToken = account.refresh_token ? decryptToken(account.refresh_token) : undefined;
+    const providerAccount = await refreshAccountTokenIfNeeded(
+      supabase,
+      provider,
+      {
+        id: account.id,
+        externalId: account.external_id,
+        accessToken,
+        refreshToken,
+        tokenExpiresAt: account.token_expires_at,
+        composio,
+      },
+      account.id
+    );
     const replyExternalId = await provider.postCommentReply(comment.platform_comment_id, trimmed, providerAccount);
 
     const { error: insertError } = await supabase.from("comments").insert({

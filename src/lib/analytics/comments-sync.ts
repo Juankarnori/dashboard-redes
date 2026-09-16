@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/db";
 import type { PlatformProvider, ProviderAccount, ProviderComment } from "@/lib/platforms/types";
 import { decryptToken } from "@/lib/crypto";
-import { getProvider } from "@/lib/platforms";
+import { resolveProviderForAccount } from "@/lib/platforms";
 import { refreshAccountTokenIfNeeded } from "@/lib/platforms/token-refresh";
 import { classifyComment } from "@/lib/analytics/comment-classify";
 
@@ -250,7 +250,7 @@ export async function syncAccountComments(supabase: DB, accountId: string): Prom
     throw new Error(`Cuenta ${accountId} no encontrada o inactiva.`);
   }
 
-  const provider = getProvider(account.platform);
+  const { provider, composio } = await resolveProviderForAccount(supabase, account.id, account.platform);
   const accessToken = decryptToken(account.access_token);
   const refreshToken = account.refresh_token ? decryptToken(account.refresh_token) : undefined;
   const providerAccount = await refreshAccountTokenIfNeeded(
@@ -262,6 +262,7 @@ export async function syncAccountComments(supabase: DB, accountId: string): Prom
       accessToken,
       refreshToken,
       tokenExpiresAt: account.token_expires_at,
+      composio,
     },
     account.id
   );
