@@ -19,28 +19,53 @@ export interface ClassificationResult {
   score: number;
 }
 
-export const LEAD_KEYWORDS = [
-  "precio",
-  "cuanto",
-  "cuesta",
-  "vale",
-  "comprar",
-  "disponible",
-  "stock",
-  "hay",
-  "envio",
-  "delivery",
-  "cotiza",
-  "cotizacion",
-  "info",
-  "interesa",
-  "quiero",
-  "pedido",
-  "wsp",
-  "whatsapp",
-  "dm",
-  "numero",
-  "contacto",
+/**
+ * Señales de intención de compra. A diferencia de los otros léxicos NO son palabras
+ * exactas: con límite estricto de palabra (\bkeyword\b) se caían variantes comunes en
+ * español ("información" e "infórmame" no matcheaban "info"; tampoco "cuestan",
+ * "pedidos", "contactarlos"...). Cada señal es una regex sobre el texto ya normalizado
+ * (minúsculas, sin acentos: "información" → "informacion") que cubre la RAÍZ con sus
+ * variantes.
+ *
+ * No es substring puro a propósito: con `includes` habría falsos positivos en elogios
+ * ("precio" dentro de "preciosa", "interesa" dentro de "interesante", "hay" dentro de
+ * "hayyy me encantó", "dm" dentro de "admirable"). Por eso las raíces largas y seguras
+ * (contact-, disponibl-, comprar-, cotiz-) van como prefijo abierto y las cortas o
+ * ambiguas (precio, info, hay, dm, numero...) llevan solo las terminaciones que sí son
+ * de compra.
+ *
+ * Cada señal cuenta UNA vez (ver densityScore). Frases como "cuánto cuesta", "cuánto
+ * vale", "lo quiero" o "me interesa" ya quedan cubiertas por las raíces (cuanto +
+ * cuesta/vale, quiero, interesa): sumar además la frase duplicaría el conteo y subiría
+ * el score sin información nueva. "a la orden" y "me ayudan con" no tienen raíz propia
+ * y van aparte.
+ */
+export const LEAD_PATTERNS: { label: string; re: RegExp }[] = [
+  { label: "precio", re: /\bprecios?\b/ },
+  { label: "cuanto", re: /\bcuantos?\b/ },
+  { label: "cuesta", re: /\bcuest(?:a|an)\b/ },
+  // "vale la pena" es un elogio, no una pregunta de precio.
+  { label: "vale", re: /\bval(?:e|en)\b(?!\s+la\s+pena)/ },
+  { label: "comprar", re: /\bcomprar\w*/ },
+  { label: "disponible", re: /\bdisponibl\w*/ },
+  { label: "stock", re: /\bstock\b/ },
+  { label: "hay", re: /\bhay\b/ },
+  { label: "envio", re: /\benvios?\b/ },
+  { label: "delivery", re: /\bdelivery\b/ },
+  { label: "cotiza", re: /\bcotiz\w*/ },
+  // info, infos, información/es, infórmame, infórmenme, informar(me|nos)... pero no "informativo" ni "informe".
+  { label: "info", re: /\binfos?\b|\binform(?:a(?:cion(?:es)?|me|nos|r(?:me|nos)?)|en(?:me|nos)?)\b/ },
+  // "interesa(n)", "interesado/a" — no "interesante".
+  { label: "interesa", re: /\binteresan?\b|\binteresad[oa]s?\b/ },
+  { label: "quiero", re: /\bquiero\b/ },
+  // pedido(s), y "cómo pido / pedir".
+  { label: "pedido", re: /\bpedid[oa]s?\b|\bcomo\s+(?:pido|pedir|pedirlo)\b/ },
+  { label: "whatsapp", re: /\b(?:wsp|wpp|whats(?:app)?)\b/ },
+  { label: "dm", re: /\bdm\b/ },
+  { label: "numero", re: /\bnumeros?\b/ },
+  { label: "contacto", re: /\bcontact\w*/ },
+  { label: "a la orden", re: /\ba\s+la\s+orden\b/ },
+  { label: "me ayudan con", re: /\bme\s+(?:ayudan|ayudas)\s+con\b/ },
 ];
 
 export const NEGATIVE_KEYWORDS = [
@@ -75,7 +100,7 @@ function normalize(text: string): string {
   return text
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+    .replace(/[\u0300-\u036f]/g, ""); // marcas de acento (NFD)
 }
 
 function countMatches(normalized: string, keywords: string[]): number {
@@ -127,7 +152,7 @@ export function classifyComment(text: string): ClassificationResult {
   // Regla "'?' junto a una palabra comercial" ya queda cubierta acá: un
   // signo de pregunta no dispara "lead" por sí solo, pero sube el score
   // cuando además hay una palabra comercial (leadMatches > 0).
-  const leadMatches = countMatches(normalized, LEAD_KEYWORDS);
+  const leadMatches = LEAD_PATTERNS.filter(({ re }) => re.test(normalized)).length;
   if (leadMatches > 0) {
     return { sentiment: "lead", score: densityScore(leadMatches, hasQuestionMark ? 20 : 0) };
   }

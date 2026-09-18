@@ -1,32 +1,30 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
-import { replyToComment } from "@/lib/analytics/comment-actions";
+import { replyToComment, suggestCommentReply } from "@/lib/analytics/comment-actions";
+import { REPLY_TEMPLATE } from "@/lib/analytics/reply-template";
 import { Button } from "@/components/ui/Button";
 
-/**
- * Texto default del botón "Usar plantilla". Es el único punto de verdad
- * para ese texto — el modal de envío masivo (/comments) lo importa como
- * valor inicial editable, pero cada envío (individual o masivo) maneja
- * su propia copia en estado local: editar uno nunca toca al otro.
- */
-export const REPLY_TEMPLATE =
-  "¡Gracias por tu comentario! 😊 Si quieres más información o hacer tu pedido, escríbenos por WhatsApp al +593 98 461 3243 y te ayudamos enseguida.";
+export { REPLY_TEMPLATE };
 
 /** Formulario de "responder" compartido entre /content/[id] y /comments. */
 export function ReplyForm({
   commentId,
   replied,
   onReplied,
+  isLead = false,
 }: {
   commentId: string;
   replied: boolean;
   /** Se llama tras publicar la respuesta con éxito, para actualizar estado local sin recargar. */
   onReplied?: () => void;
+  /** Muestra "Sugerir con IA" — solo tiene sentido en comentarios con intención de compra. */
+  isLead?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [isSuggesting, setIsSuggesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -42,6 +40,18 @@ export function ReplyForm({
         onReplied?.();
       }
     });
+  }
+
+  async function handleSuggest() {
+    setError(null);
+    setIsSuggesting(true);
+    try {
+      const result = await suggestCommentReply(commentId);
+      if (result.error) setError(result.error);
+      else if (result.suggestion) setMessage(result.suggestion);
+    } finally {
+      setIsSuggesting(false);
+    }
   }
 
   if (!open) {
@@ -69,13 +79,25 @@ export function ReplyForm({
       />
       {error && <p className="text-xs text-negative">{error}</p>}
       <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setMessage(REPLY_TEMPLATE)}
-          className="text-xs font-medium text-accent hover:underline"
-        >
-          Usar plantilla
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setMessage(REPLY_TEMPLATE)}
+            className="text-xs font-medium text-accent hover:underline"
+          >
+            Usar plantilla
+          </button>
+          {isLead && (
+            <button
+              type="button"
+              onClick={handleSuggest}
+              disabled={isSuggesting}
+              className="text-xs font-medium text-accent hover:underline disabled:opacity-60"
+            >
+              {isSuggesting ? "Redactando…" : "🔥 Sugerir con IA"}
+            </button>
+          )}
+        </div>
         <div className="flex gap-2">
           <Button
             type="button"

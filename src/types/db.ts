@@ -213,6 +213,9 @@ export interface Database {
           follows: number | null;
           media_count: number | null;
           demographics: Record<string, unknown>;
+          reach: number | null;
+          reach_7d: number | null;
+          interactions: number | null;
         };
         Insert: {
           id?: string;
@@ -222,6 +225,9 @@ export interface Database {
           follows?: number | null;
           media_count?: number | null;
           demographics?: Record<string, unknown>;
+          reach?: number | null;
+          reach_7d?: number | null;
+          interactions?: number | null;
         };
         Update: Partial<Database["public"]["Tables"]["audience_snapshot"]["Insert"]>;
         Relationships: [
@@ -621,6 +627,49 @@ export interface Database {
             columns: ["conversation_id"];
             isOneToOne: false;
             referencedRelation: "whatsapp_conversations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      composio_connections: {
+        Row: {
+          id: string;
+          brand_id: string;
+          platform: Platform;
+          account_id: string | null;
+          composio_user_id: string;
+          composio_connected_account_id: string;
+          alias: string | null;
+          external_username: string | null;
+          status: string;
+          connected_at: string;
+        };
+        Insert: {
+          id?: string;
+          brand_id: string;
+          platform: Platform;
+          account_id?: string | null;
+          composio_user_id: string;
+          composio_connected_account_id: string;
+          alias?: string | null;
+          external_username?: string | null;
+          status?: string;
+          connected_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["composio_connections"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "composio_connections_brand_id_fkey";
+            columns: ["brand_id"];
+            isOneToOne: false;
+            referencedRelation: "brands";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "composio_connections_account_id_fkey";
+            columns: ["account_id"];
+            isOneToOne: false;
+            referencedRelation: "accounts";
             referencedColumns: ["id"];
           },
         ];

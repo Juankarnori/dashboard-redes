@@ -6,7 +6,7 @@ import { StatTile } from "@/components/dashboard/StatTile";
 import { FollowerGrowthChart } from "@/components/charts/FollowerGrowthChart";
 import { PlatformComparisonChart } from "@/components/charts/PlatformComparisonChart";
 import { PlatformBadge } from "@/components/dashboard/PlatformBadge";
-import { getOverview, getActiveAlerts } from "@/lib/analytics/queries";
+import { getOverview, getActiveAlerts, getKpiTrends, getAttentionSummary } from "@/lib/analytics/queries";
 import { cn } from "@/lib/utils";
 import type { Platform } from "@/types/db";
 
@@ -53,9 +53,11 @@ export default async function OverviewPage({
   }
 
   const overviewFilters = { brandId: brand, platform: platform as Platform | undefined };
-  const [overview, alerts] = await Promise.all([
+  const [overview, alerts, kpiTrends, attention] = await Promise.all([
     getOverview(supabase, overviewFilters),
     getActiveAlerts(supabase, overviewFilters),
+    getKpiTrends(supabase, overviewFilters),
+    getAttentionSummary(supabase, overviewFilters),
   ]);
 
   const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
@@ -111,8 +113,63 @@ export default async function OverviewPage({
         </div>
       )}
 
+      {(attention.unrepliedComments > 0 || attention.hotLeads > 0 || attention.pendingDrafts > 0) && (
+        <div className="flex flex-col gap-2 px-4 pt-6 sm:px-8">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-600">Necesita tu atención</h2>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {attention.hotLeads > 0 && (
+              <Link
+                href="/comments"
+                className="flex items-center justify-between gap-3 rounded-[--radius-card] border border-live/40 bg-live/10 px-4 py-3 text-sm hover:bg-live/15"
+              >
+                <span className="text-ink-900">🔥 Leads calientes sin responder</span>
+                <span className="tabular font-semibold text-ink-900">{attention.hotLeads}</span>
+              </Link>
+            )}
+            {attention.unrepliedComments > 0 && (
+              <Link
+                href="/comments"
+                className="flex items-center justify-between gap-3 rounded-[--radius-card] border border-border bg-surface-1 px-4 py-3 text-sm hover:bg-surface-2"
+              >
+                <span className="text-ink-900">Comentarios sin responder</span>
+                <span className="tabular font-semibold text-ink-900">{attention.unrepliedComments}</span>
+              </Link>
+            )}
+            {attention.pendingDrafts > 0 && (
+              <Link
+                href="/calendar"
+                className="flex items-center justify-between gap-3 rounded-[--radius-card] border border-border bg-surface-1 px-4 py-3 text-sm hover:bg-surface-2"
+              >
+                <span className="text-ink-900">Borradores pendientes de aprobar</span>
+                <span className="tabular font-semibold text-ink-900">{attention.pendingDrafts}</span>
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 px-4 py-6 sm:grid-cols-3 sm:px-8">
-        <StatTile label="Seguidores totales" value={overview.totalFollowers.toLocaleString("es")} />
+        <StatTile
+          label="Seguidores totales"
+          value={overview.totalFollowers.toLocaleString("es")}
+          trend={kpiTrends.followers.series}
+        />
+        <StatTile
+          label="Alcance / vistas (7d)"
+          value={kpiTrends.reach7d.current.toLocaleString("es")}
+          trend={kpiTrends.reach7d.series}
+          hint="Instagram: alcance único (cuentas distintas). Facebook: vistas de contenido (Meta ya no expone alcance de Página). TikTok: no disponible con los permisos actuales."
+        />
+        <StatTile
+          label="Interacciones (7d)"
+          value={kpiTrends.interactions7d.current.toLocaleString("es")}
+          trend={kpiTrends.interactions7d.series}
+        />
+        <StatTile
+          label="Publicaciones (7d)"
+          value={String(kpiTrends.posts7d.current)}
+          trend={kpiTrends.posts7d.series}
+        />
         <StatTile label="Contenido publicado" value={String(overview.totalContent)} />
         <StatTile label="Engagement promedio" value={pct(overview.avgEngagementRate)} />
       </div>

@@ -1,6 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Platform, CommentSentiment } from "@/types/db";
-import { engagementRate, latestByContentId, latestByAccountId, followerSeriesByDay } from "./engagement";
+import {
+  engagementRate,
+  latestByContentId,
+  latestByAccountId,
+  followerSeriesByDay,
+  metricSeriesByDay,
+  postsPerDay,
+} from "./engagement";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -478,4 +485,160 @@ export async function getCommentsInbox(supabase: DB, filters: OverviewFilters): 
   }
 
   return inbox;
+}
+
+export interface KpiTrends {
+  followers: { current: number; series: number[] };
+  posts7d: { current: number; series: number[] };
+  reach7d: { current: number; series: number[] };
+  interactions7d: { current: number; series: number[] };
+}
+
+/**
+ * Fase 2: series cortas para los sparklings de Resumen.
+ *
+ * reach7d.current = suma, por cuenta, del `reach_7d` más reciente (ya
+ * deduplicado por Meta vía metric_type=total_value — ver migración
+ * 0017) — NUNCA una suma de la serie `reach` diaria, que inflaría el
+ * número igual que el bug ya corregido en getInstagramAccountInsights.
+ * La serie del sparkline sí usa `reach` día a día (sumado ACROSS
+ * CUENTAS, válido — audiencias distintas no se pisan), solo para
+ * mostrar la tendencia, no para el total.
+ *
+ * interactions7d.current SÍ es una suma de los últimos 7 días de la
+ * serie diaria — interactions es aditivo (ver nota en la migración
+ * 0017), a diferencia de reach.
+ */
+export async function getKpiTrends(supabase: DB, filters: OverviewFilters, days = 14): Promise<KpiTrends> {
+  const accounts = await getFilteredAccounts(supabase, filters);
+  const accountIds = accounts.map((a) => a.id);
+  const empty = { current: 0, series: [] as number[] };
+  if (accountIds.length === 0) {
+    return { followers: empty, posts7d: empty, reach7d: empty, interactions7d: empty };
+  }
+
+  const since = new Date(Date.now() - days * DAY_MS).toISOString();
+  const [{ data: audienceRows }, { data: contentRows }] = await Promise.all([
+    supabase
+      .from("audience_snapshot")
+      .select("account_id, captured_at, followers, reach, reach_7d, interactions")
+      .in("account_id", accountIds)
+      .gte("captured_at", since)
+      .order("captured_at", { ascending: true }),
+    supabase.from("content").select("published_at").in("account_id", accountIds).gte("published_at", since),
+  ]);
+
+  const rows = audienceRows ?? [];
+  const followerSeries = followerSeriesByDay(rows);
+  const perDay = postsPerDay(contentRows ?? [], days);
+  const posts7d = perDay.slice(-7).reduce((sum, d) => sum + d.count, 0);
+
+  const reachSeries = metricSeriesByDay(rows, "reach");
+  const interactionsSeries = metricSeriesByDay(rows, "interactions");
+  const interactions7d = interactionsSeries.slice(-7).reduce((sum, d) => sum + d.value, 0);
+
+  // reach_7d: último valor por cuenta (no por día — es un rollup que ya
+  // representa "los últimos 7 días desde este snapshot"), sumado entre
+  // cuentas.
+  const latestReach7dByAccount = latestByAccountId(
+    rows.filter((r) => r.reach_7d !== null) as { account_id: string; captured_at: string; reach_7d: number }[]
+  );
+  const reach7dCurrent = Array.from(latestReach7dByAccount.values()).reduce((sum, r) => sum + r.reach_7d, 0);
+
+  return {
+    followers: {
+      current: followerSeries.at(-1)?.followers ?? 0,
+      series: followerSeries.map((d) => d.followers),
+    },
+    posts7d: {
+      current: posts7d,
+      series: perDay.map((d) => d.count),
+    },
+    reach7d: {
+      current: reach7dCurrent,
+      series: reachSeries.map((d) => d.value),
+    },
+    interactions7d: {
+      current: interactions7d,
+      series: interactionsSeries.map((d) => d.value),
+    },
+  };
+}
+
+export interface AttentionSummary {
+  unrepliedComments: number;
+  hotLeads: number;
+  pendingDrafts: number;
+}
+
+/**
+ * Fase 2: bloque "Necesita tu atención" del Resumen — reusa
+ * getCommentsInbox (ya trae comentarios de terceros sin nuestras
+ * respuestas) en vez de repetir esa consulta.
+ */
+export async function getAttentionSummary(supabase: DB, filters: OverviewFilters): Promise<AttentionSummary> {
+  const [inbox, draftsResult] = await Promise.all([
+    getCommentsInbox(supabase, filters),
+    (() => {
+      let query = supabase.from("content_calendar").select("id", { count: "exact", head: true }).eq("status", "planned");
+      if (filters.brandId) query = query.eq("brand_id", filters.brandId);
+      if (filters.platform) query = query.eq("platform", filters.platform);
+      return query;
+    })(),
+  ]);
+
+  const pending = inbox.filter((c) => !c.replied);
+  return {
+    unrepliedComments: pending.length,
+    hotLeads: pending.filter((c) => c.sentiment === "lead").length,
+    pendingDrafts: draftsResult.count ?? 0,
+  };
+}
+
+export interface TrendPoint {
+  date: string;
+  followers: number;
+  reach: number;
+  interactions: number;
+}
+
+/**
+ * Fase 2 (Analíticas): serie diaria para el gráfico de tendencias —
+ * mismo criterio que getKpiTrends (sumar por día ACROSS CUENTAS es
+ * válido, nunca sumar `reach` across días). `reach` acá es la métrica
+ * diaria (no `reach_7d`): el objetivo del gráfico es mostrar cómo varía
+ * día a día, no un total.
+ */
+export async function getTrendSeries(supabase: DB, filters: OverviewFilters, days = 30): Promise<TrendPoint[]> {
+  const accounts = await getFilteredAccounts(supabase, filters);
+  const accountIds = accounts.map((a) => a.id);
+  if (accountIds.length === 0) return [];
+
+  const since = new Date(Date.now() - days * DAY_MS).toISOString();
+  const { data: audienceRows } = await supabase
+    .from("audience_snapshot")
+    .select("account_id, captured_at, followers, reach, interactions")
+    .in("account_id", accountIds)
+    .gte("captured_at", since)
+    .order("captured_at", { ascending: true });
+
+  const rows = audienceRows ?? [];
+  const followers = metricSeriesByDay(rows, "followers");
+  const reach = metricSeriesByDay(rows, "reach");
+  const interactions = metricSeriesByDay(rows, "interactions");
+
+  const byDate = new Map<string, TrendPoint>();
+  for (const { date, value } of followers) byDate.set(date, { date, followers: value, reach: 0, interactions: 0 });
+  for (const { date, value } of reach) {
+    const point = byDate.get(date) ?? { date, followers: 0, reach: 0, interactions: 0 };
+    point.reach = value;
+    byDate.set(date, point);
+  }
+  for (const { date, value } of interactions) {
+    const point = byDate.get(date) ?? { date, followers: 0, reach: 0, interactions: 0 };
+    point.interactions = value;
+    byDate.set(date, point);
+  }
+
+  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }

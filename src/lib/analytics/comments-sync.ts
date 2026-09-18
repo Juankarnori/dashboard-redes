@@ -1,8 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/db";
-import type { PlatformProvider, ProviderAccount, ProviderComment } from "@/lib/platforms/types";
+import type { CommentActivityItem, PlatformProvider, ProviderAccount, ProviderComment } from "@/lib/platforms/types";
+import {
+  buildCheckpointMeta,
+  needsCommentCheck,
+  readCheckpoint,
+  pickOldContentToRefresh,
+  OLD_POSTS_TIME_BUDGET_MS,
+  OLD_POSTS_FIRST_BATCH_LIMIT_MS,
+} from "@/lib/analytics/comment-activity";
 import { decryptToken } from "@/lib/crypto";
-import { getProvider } from "@/lib/platforms";
+import { resolveProviderForAccount } from "@/lib/platforms";
 import { refreshAccountTokenIfNeeded } from "@/lib/platforms/token-refresh";
 import { classifyComment } from "@/lib/analytics/comment-classify";
 
@@ -14,6 +22,9 @@ type DB = SupabaseClient<Database>;
  * el timeout de 10s de Vercel Hobby en cuentas con mucho contenido viejo.
  */
 export const COMMENTS_LOOKBACK_DAYS = 14;
+
+/** Piezas cuyos comentarios se piden a la vez (ver syncBatch en syncCommentsForAccount). */
+const COMMENTS_CONCURRENCY = 4;
 
 /**
  * Sincroniza comentarios del contenido reciente de una cuenta. No fatal
@@ -28,6 +39,11 @@ export async function syncCommentsForAccount(
 ): Promise<number> {
   if (!provider.fetchComments) return 0;
 
+  const startedMs = Date.now();
+  // Checkpoint = ANTES de mirar la actividad, no después: un comentario que entre
+  // mientras corre el sync tiene updated_time posterior y se toma en la próxima corrida.
+  const runStartedAt = new Date().toISOString();
+
   const cutoff = new Date(Date.now() - COMMENTS_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
   console.log(
     `[comments-sync] account=${accountId} cutoff=${cutoff} (ventana de ${COMMENTS_LOOKBACK_DAYS} días)`
@@ -38,7 +54,7 @@ export async function syncCommentsForAccount(
   // o fuera de la ventana — así se ve si el corte del filtro es el problema.
   const { data: allContent, error: contentQueryError } = await supabase
     .from("content")
-    .select("id, external_id, published_at")
+    .select("id, external_id, published_at, meta")
     .eq("account_id", accountId);
 
   if (contentQueryError) {
@@ -58,31 +74,123 @@ export async function syncCommentsForAccount(
     `[comments-sync] account=${accountId} content total=${(allContent ?? []).length} dentro de ventana=${recentContent.length}`
   );
 
+  // Contenido MÁS VIEJO que la ventana: los comentarios nuevos en posts viejos
+  // (ej. alguien pregunta el precio en un Reel de hace meses) no se veían nunca
+  // porque solo se miraba por fecha de publicación. Si el provider sabe decir
+  // a qué piezas les entró actividad, se vuelven a pedir solo esas.
+  const olderContent = (allContent ?? []).filter((c) => !!c.published_at && c.published_at < cutoff);
+  const activityPromise: Promise<CommentActivityItem[]> =
+    provider.fetchCommentActivity && olderContent.length > 0
+      ? provider
+          .fetchCommentActivity(
+            providerAccount,
+            olderContent.reduce((min, c) => (c.published_at! < min ? c.published_at! : min), olderContent[0].published_at!)
+          )
+          .catch((err) => {
+            // No fatal: sin la señal de actividad se sigue con la ventana reciente como siempre.
+            console.error(`[comments-sync] account=${accountId} no se pudo listar actividad de comentarios:`, err);
+            return [];
+          })
+      : Promise.resolve([]);
+
   let synced = 0;
-  for (const content of recentContent) {
-    try {
-      // Diagnóstico (2): confirma que efectivamente se llama a
-      // fetchComments para este content_id/external_id puntual.
-      console.log(
-        `[comments-sync] pidiendo comentarios: content_id=${content.id} external_id=${content.external_id}`
+  const doneContent: typeof recentContent = [];
+
+  // Lotes de COMMENTS_CONCURRENCY en paralelo: con la latencia real de Composio (~1,5 s por
+  // post, ~3,5 s el listado de actividad) pedirlos de a uno pasaba el timeout de 10s de
+  // Vercel Hobby. `budgetMs` (solo contenido viejo): no se arranca un lote nuevo si ya se
+  // gastó ese tiempo; lo que no entró queda sin checkpoint y va en la próxima corrida.
+  const syncBatch = async (items: typeof recentContent, budgetMs?: number) => {
+    for (let i = 0; i < items.length; i += COMMENTS_CONCURRENCY) {
+      const limitMs = i === 0 ? OLD_POSTS_FIRST_BATCH_LIMIT_MS : budgetMs;
+      if (budgetMs !== undefined && limitMs !== undefined && Date.now() - startedMs > limitMs) {
+        console.log(
+          `[comments-sync] account=${accountId} presupuesto de tiempo agotado — ${items.length - i} pieza(s) vieja(s) quedan para la próxima corrida`
+        );
+        return;
+      }
+      await Promise.all(
+        items.slice(i, i + COMMENTS_CONCURRENCY).map(async (content) => {
+          try {
+            // Diagnóstico (2): confirma que efectivamente se llama a
+            // fetchComments para este content_id/external_id puntual.
+            console.log(
+              `[comments-sync] pidiendo comentarios: content_id=${content.id} external_id=${content.external_id}`
+            );
+            const comments = await provider.fetchComments!(content.external_id, providerAccount);
+            // Diagnóstico (3): shape ya normalizado (ProviderComment[]) que
+            // llega desde el provider — la respuesta verdaderamente cruda de
+            // Meta se loguea dentro de fetchInstagramComments/fetchFacebookComments.
+            console.log(
+              `[comments-sync] provider.fetchComments devolvió ${comments.length} item(s) para external_id=${content.external_id}:`,
+              JSON.stringify(comments, null, 2)
+            );
+            // (no `synced += await ...`: con lotes en paralelo leería un `synced` viejo)
+            const n = await syncCommentsForContent(supabase, content.id, comments, providerAccount.externalId);
+            synced += n;
+            doneContent.push(content);
+          } catch (err) {
+            console.error(`[comments-sync] No se pudieron sincronizar comentarios de content ${content.id}:`, err);
+          }
+        })
       );
-      const comments = await provider.fetchComments(content.external_id, providerAccount);
-      // Diagnóstico (3): shape ya normalizado (ProviderComment[]) que
-      // llega desde el provider — la respuesta verdaderamente cruda de
-      // Meta se loguea dentro de fetchInstagramComments/fetchFacebookComments.
-      console.log(
-        `[comments-sync] provider.fetchComments devolvió ${comments.length} item(s) para external_id=${content.external_id}:`,
-        JSON.stringify(comments, null, 2)
-      );
-      synced += await syncCommentsForContent(supabase, content.id, comments, providerAccount.externalId);
-    } catch (err) {
-      console.error(`[comments-sync] No se pudieron sincronizar comentarios de content ${content.id}:`, err);
     }
+  };
+
+  // El listado de actividad corre EN PARALELO con la ventana reciente: no le suma
+  // tiempo a lo que ya se hacía.
+  const [activity] = await Promise.all([activityPromise, syncBatch(recentContent)]);
+  const tRecentMs = Date.now() - startedMs;
+  const activityByExternalId = new Map<string, CommentActivityItem>(activity.map((a) => [a.externalId, a]));
+
+  const picked = pickOldContentToRefresh(olderContent, activity);
+  if (provider.fetchCommentActivity && olderContent.length > 0) {
+    console.log(
+      `[comments-sync] account=${accountId} actividad: ${activity.length} posts listados, ${olderContent.length} viejos en BD, ${picked.length} viejos con actividad nueva a revisar`
+    );
   }
+  await syncBatch(
+    picked.map((p) => p.content),
+    OLD_POSTS_TIME_BUDGET_MS
+  );
+
+  const tOldMs = Date.now() - startedMs;
+
+  // Checkpoint de "comentarios revisados": recién acá (después de guardarlos bien) y para
+  // toda pieza revisada que aparezca en el listado de actividad — así una pieza reciente
+  // que envejece más allá de la ventana no se vuelve a pedir sin motivo. Si el update falla
+  // no es grave (solo se vuelve a revisar): ojo que con la sesión del dueño (botón
+  // "Actualizar ahora") RLS de `content` solo permite leer, así que ahí no persiste — el
+  // cron (service role) sí.
+  await Promise.all(
+    doneContent.map(async (content) => {
+      const a = activityByExternalId.get(content.external_id);
+      if (!a) return;
+      // Solo si hay algo nuevo que registrar: en régimen normal las piezas recientes se
+      // vuelven a pedir en cada corrida, y reescribir el mismo checkpoint cada 10 min son
+      // escrituras inútiles.
+      const previous = readCheckpoint(content.meta);
+      if (previous.checkedAt && !needsCommentCheck(a, previous)) return;
+      const { error: checkpointError } = await supabase
+        .from("content")
+        .update({ meta: buildCheckpointMeta(content.meta, runStartedAt, a) })
+        .eq("id", content.id);
+      if (checkpointError) {
+        console.warn(`[comments-sync] no se pudo guardar el checkpoint de content ${content.id}:`, checkpointError.message);
+      }
+    })
+  );
 
   // Clasificación por reglas (sentimiento + intent_score) de lo que quedó
   // sin clasificar — solo CPU, sin red, cabe sobrado en el timeout.
+  const tCheckpointMs = Date.now() - startedMs;
   await classifyPendingComments(supabase);
+
+  // Tiempos por fase (ms acumulados desde el inicio): para ver en los logs de Vercel si
+  // el sync se acerca al timeout de 10s, y en qué fase.
+  console.log(
+    `[comments-sync] account=${accountId} tiempos acumulados ms: reciente+listado=${tRecentMs} viejos=${tOldMs} checkpoints=${tCheckpointMs} total=${Date.now() - startedMs}`
+  );
 
   return synced;
 }
@@ -250,7 +358,7 @@ export async function syncAccountComments(supabase: DB, accountId: string): Prom
     throw new Error(`Cuenta ${accountId} no encontrada o inactiva.`);
   }
 
-  const provider = getProvider(account.platform);
+  const { provider, composio } = await resolveProviderForAccount(supabase, account.id, account.platform);
   const accessToken = decryptToken(account.access_token);
   const refreshToken = account.refresh_token ? decryptToken(account.refresh_token) : undefined;
   const providerAccount = await refreshAccountTokenIfNeeded(
@@ -262,6 +370,7 @@ export async function syncAccountComments(supabase: DB, accountId: string): Prom
       accessToken,
       refreshToken,
       tokenExpiresAt: account.token_expires_at,
+      composio,
     },
     account.id
   );

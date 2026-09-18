@@ -30,6 +30,16 @@ export interface PlatformProvider {
    */
   fetchComments?(contentExternalId: string, account: ProviderAccount): Promise<ProviderComment[]>;
 
+  /**
+   * Señal barata de "a qué publicaciones les entraron comentarios": un
+   * listado (no una llamada por post) con la última actividad de cada
+   * pieza publicada desde `since` (ISO). El sync de comentarios la usa
+   * para volver a pedir comentarios de contenido MÁS VIEJO que la ventana
+   * de COMMENTS_LOOKBACK_DAYS solo cuando hay actividad nueva. Opcional:
+   * sin esto el sync mira solo la ventana reciente, como siempre.
+   */
+  fetchCommentActivity?(account: ProviderAccount, since: string): Promise<CommentActivityItem[]>;
+
   /** Publica una respuesta a un comentario. Devuelve el id del comentario de respuesta creado. */
   postCommentReply?(commentExternalId: string, message: string, account: ProviderAccount): Promise<string>;
 
@@ -87,6 +97,14 @@ export interface RefreshedToken {
   expiresAt: string; // ISO
 }
 
+export interface CommentActivityItem {
+  externalId: string;
+  /** Última modificación de la pieza según la red (Facebook la mueve cuando entra un comentario). */
+  updatedAt?: string;
+  /** Total de comentarios que reporta la red hoy. */
+  commentCount?: number;
+}
+
 export interface ProviderComment {
   externalId: string;
   /** Presente si es una respuesta ya existente en la plataforma (no una que generamos nosotros). */
@@ -104,6 +122,17 @@ export interface ProviderAccount {
   accessToken: string; // ya descifrado por el llamador
   refreshToken?: string; // ya descifrado por el llamador — solo redes con refresh (TikTok)
   tokenExpiresAt?: string | null;
+  /**
+   * Presente cuando la cuenta tiene una conexión Composio activa y
+   * linkeada (composio_connections.account_id) — ver
+   * lib/platforms/composio-adapter.ts (Fase 2). Los providers *Composio
+   * leen esto en vez de accessToken; accessToken/refreshToken se siguen
+   * llenando siempre igual (la integración directa queda de fallback
+   * por método: si el provider Composio no implementa algo —
+   * fetchComments, postCommentReply, publishContent, todavía en Fase 3
+   * — se usa el directo con esos mismos campos).
+   */
+  composio?: { userId: string; connectedAccountId: string };
 }
 
 export interface ProviderContentItem {
@@ -131,4 +160,26 @@ export interface ProviderAudienceSnapshot {
   follows?: number;
   mediaCount?: number;
   demographics?: Record<string, unknown>;
+  /**
+   * Alcance/vistas de ESE día únicamente (no acumulable entre días — ver
+   * audience_snapshot.reach). Solo Instagram lo llena hoy (Facebook ya
+   * no tiene una métrica de reach a nivel de Página, Meta la deprecó;
+   * TikTok no expone nada a nivel de cuenta más allá de
+   * TIKTOK_GET_USER_STATS). Queda undefined en las redes que no lo tienen.
+   */
+  reachToday?: number;
+  /**
+   * Alcance único YA deduplicado de los últimos 7 días (metric_type=
+   * total_value en Instagram) — es lo que alimenta el KPI "Alcance (7d)"
+   * de Resumen. NUNCA se deriva sumando 7 `reachToday` (ver bug real
+   * corregido en getInstagramAccountInsights).
+   */
+  reach7d?: number;
+  /**
+   * Interacciones/vistas de contenido de ESE día — a diferencia de
+   * reach, esto SÍ es aditivo entre días (cada día son eventos nuevos,
+   * no un conteo de cuentas únicas) — se puede sumar de forma segura
+   * para el KPI de 7 días en vez de necesitar un total_value aparte.
+   */
+  interactionsToday?: number;
 }

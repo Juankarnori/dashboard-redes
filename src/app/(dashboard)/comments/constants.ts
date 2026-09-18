@@ -1,7 +1,7 @@
 import type { CommentSentiment } from "@/types/db";
 
 export const SENTIMENT_LABELS: Record<CommentSentiment, string> = {
-  lead: "Lead",
+  lead: "🔥 Lead",
   negative: "Negativo",
   question: "Pregunta",
   spam: "Spam",

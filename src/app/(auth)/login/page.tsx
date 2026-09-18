@@ -23,7 +23,7 @@ export default function LoginPage() {
             </span>
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
-            Social <span className="font-mono text-accent">Pulse</span>
+            Social <span className="text-accent">Pulse</span>
           </h1>
           <p className="mt-2 text-sm text-ink-600">
             Métricas y recomendaciones de tus redes, en un solo lugar.

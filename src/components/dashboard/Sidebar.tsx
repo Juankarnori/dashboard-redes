@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/app/(dashboard)/actions";
+import { ThemeToggle } from "./ThemeToggle";
 
 const NAV_ITEMS = [
   { href: "/", label: "Resumen" },
@@ -16,22 +17,26 @@ const NAV_ITEMS = [
   { href: "/recommendations", label: "Recomendaciones" },
   { href: "/reports", label: "Reportes" },
   { href: "/settings/accounts", label: "Cuentas" },
+  { href: "/settings/composio", label: "Composio" },
 ];
 
 export function MobileTopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
   return (
-    <div className="flex items-center gap-3 border-b border-border bg-surface-1 px-4 py-3 lg:hidden">
-      <button
-        type="button"
-        onClick={onOpenMenu}
-        aria-label="Abrir menú"
-        className="inline-flex h-9 w-9 items-center justify-center rounded-[0.5rem] border border-border bg-surface-0 text-ink-600 transition-colors hover:bg-surface-2"
-      >
-        <Menu size={18} />
-      </button>
-      <span className="text-sm font-semibold tracking-tight text-ink-900">
-        Social <span className="font-mono text-accent">Pulse</span>
-      </span>
+    <div className="flex items-center justify-between gap-3 border-b border-border bg-surface-1 px-4 py-3 lg:hidden">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onOpenMenu}
+          aria-label="Abrir menú"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-[0.5rem] border border-border bg-surface-0 text-ink-600 transition-colors hover:bg-surface-2"
+        >
+          <Menu size={18} />
+        </button>
+        <span className="font-display text-sm font-semibold tracking-tight text-ink-900">
+          Social <span className="text-accent">Pulse</span>
+        </span>
+      </div>
+      <ThemeToggle />
     </div>
   );
 }
@@ -74,18 +79,21 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         <div className="mb-8 flex items-center justify-between px-2">
           <div className="flex items-center gap-2">
             <span aria-hidden className="pulse-dot h-1.5 w-1.5 rounded-full bg-live" />
-            <span className="text-sm font-semibold tracking-tight text-ink-900">
-              Social <span className="font-mono text-accent">Pulse</span>
+            <span className="font-display text-sm font-semibold tracking-tight text-ink-900">
+              Social <span className="text-accent">Pulse</span>
             </span>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Cerrar menú"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-[0.4rem] text-ink-400 transition-colors hover:bg-surface-2 hover:text-ink-900 lg:hidden"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar menú"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-[0.4rem] text-ink-400 transition-colors hover:bg-surface-2 hover:text-ink-900 lg:hidden"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5">
