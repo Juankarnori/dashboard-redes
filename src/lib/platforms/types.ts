@@ -30,6 +30,16 @@ export interface PlatformProvider {
    */
   fetchComments?(contentExternalId: string, account: ProviderAccount): Promise<ProviderComment[]>;
 
+  /**
+   * Señal barata de "a qué publicaciones les entraron comentarios": un
+   * listado (no una llamada por post) con la última actividad de cada
+   * pieza publicada desde `since` (ISO). El sync de comentarios la usa
+   * para volver a pedir comentarios de contenido MÁS VIEJO que la ventana
+   * de COMMENTS_LOOKBACK_DAYS solo cuando hay actividad nueva. Opcional:
+   * sin esto el sync mira solo la ventana reciente, como siempre.
+   */
+  fetchCommentActivity?(account: ProviderAccount, since: string): Promise<CommentActivityItem[]>;
+
   /** Publica una respuesta a un comentario. Devuelve el id del comentario de respuesta creado. */
   postCommentReply?(commentExternalId: string, message: string, account: ProviderAccount): Promise<string>;
 
@@ -85,6 +95,14 @@ export interface RefreshedToken {
   accessToken: string;
   refreshToken: string;
   expiresAt: string; // ISO
+}
+
+export interface CommentActivityItem {
+  externalId: string;
+  /** Última modificación de la pieza según la red (Facebook la mueve cuando entra un comentario). */
+  updatedAt?: string;
+  /** Total de comentarios que reporta la red hoy. */
+  commentCount?: number;
 }
 
 export interface ProviderComment {

@@ -1,5 +1,5 @@
 import { getComposioClient } from "./client";
-import type { ProviderContentItem, ProviderComment } from "@/lib/platforms/types";
+import type { ProviderContentItem, ProviderComment, CommentActivityItem } from "@/lib/platforms/types";
 
 /**
  * Facebook (Página) vía Composio — mismo patrón que instagram.ts: userId
@@ -182,6 +182,71 @@ export async function getFacebookPagePosts(
       },
     };
   });
+}
+
+const ACTIVITY_PAGE_SIZE = 100;
+const ACTIVITY_MAX_PAGES = 3;
+
+/**
+ * Actividad de comentarios de TODAS las publicaciones de la Página desde
+ * `sinceIso`, en 1 llamada por cada 100 posts (no una por post). Verificado
+ * en vivo: `updated_time` del feed se mueve cuando entra un comentario o una
+ * respuesta (un Reel de oct-2025 con comentario en sep-2026 mostraba
+ * updated_time = la fecha del comentario) y `comments.summary(true)` trae el
+ * total de nivel superior en el mismo listado.
+ *
+ * GET_PAGE_POSTS no expone cursor: se pagina con `until` = created_time del
+ * post más viejo de la página anterior. Se sigue mientras la página traiga
+ * algo y no se haya llegado a `since` (no se corta por "menos de 100":
+ * Graph puede devolver páginas cortas con más resultados atrás).
+ */
+export async function getFacebookCommentActivity(
+  userId: string,
+  connectedAccountId: string,
+  pageId: string,
+  sinceIso: string
+): Promise<CommentActivityItem[]> {
+  const composio = getComposioClient();
+  // -60s: margen por si `since` es exclusivo — el post más viejo del rango no puede quedar afuera.
+  const sinceSec = Math.floor(new Date(sinceIso).getTime() / 1000) - 60;
+  const out = new Map<string, CommentActivityItem>();
+  let untilSec: number | undefined;
+
+  for (let page = 0; page < ACTIVITY_MAX_PAGES; page++) {
+    const args: Record<string, unknown> = {
+      page_id: pageId,
+      limit: ACTIVITY_PAGE_SIZE,
+      since: String(sinceSec),
+      fields: "id,created_time,updated_time,comments.summary(true)",
+    };
+    if (untilSec !== undefined) args.until = String(untilSec);
+
+    const result = await composio.tools.execute("FACEBOOK_GET_PAGE_POSTS", {
+      userId,
+      connectedAccountId,
+      arguments: args,
+    });
+    if (!result.successful) throw new Error(result.error ?? "FACEBOOK_GET_PAGE_POSTS (actividad) falló");
+
+    const items = (result.data.data as Record<string, unknown>[] | undefined) ?? [];
+    if (items.length === 0) break;
+
+    let oldestSec = Infinity;
+    for (const p of items) {
+      const summary = (p.comments as { summary?: { total_count?: number } } | undefined)?.summary;
+      out.set(String(p.id), {
+        externalId: String(p.id),
+        updatedAt: (p.updated_time as string) ?? undefined,
+        commentCount: summary?.total_count,
+      });
+      const createdSec = Math.floor(new Date(p.created_time as string).getTime() / 1000);
+      if (!Number.isNaN(createdSec)) oldestSec = Math.min(oldestSec, createdSec);
+    }
+    if (oldestSec === Infinity || oldestSec <= sinceSec) break;
+    untilSec = oldestSec - 1;
+  }
+
+  return Array.from(out.values());
 }
 
 /**

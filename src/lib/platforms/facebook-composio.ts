@@ -2,6 +2,7 @@ import type {
   PlatformProvider,
   ProviderAccount,
   ProviderAudienceSnapshot,
+  CommentActivityItem,
   ProviderComment,
   ProviderContentItem,
   PublishInput,
@@ -14,6 +15,7 @@ import {
   getFacebookPagePosts,
   getFacebookPostViews,
   getFacebookComments,
+  getFacebookCommentActivity,
   postFacebookCommentReply,
   createFacebookPhotoPost,
   createFacebookVideoPost,
@@ -89,6 +91,14 @@ export const facebookComposioProvider: PlatformProvider = {
   async fetchComments(contentExternalId: string, account: ProviderAccount): Promise<ProviderComment[]> {
     const { userId, connectedAccountId } = requireComposio(account);
     return getFacebookComments(userId, connectedAccountId, contentExternalId);
+  },
+
+  async fetchCommentActivity(account: ProviderAccount, since: string): Promise<CommentActivityItem[]> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    // account.externalId ES el page id (accounts.external_id) — se usa directo en
+    // vez de resolvePageId para no gastar una llamada más (LIST_MANAGED_PAGES)
+    // en cada corrida del cron de comentarios.
+    return getFacebookCommentActivity(userId, connectedAccountId, account.externalId, since);
   },
 
   async postCommentReply(commentExternalId: string, message: string, account: ProviderAccount): Promise<string> {
