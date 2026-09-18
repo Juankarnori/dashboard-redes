@@ -1,6 +1,7 @@
 import type {
   PlatformProvider,
   ProviderAccount,
+  CommentActivityItem,
   ProviderAudienceSnapshot,
   ProviderComment,
   ProviderContentItem,
@@ -13,6 +14,7 @@ import {
   getInstagramMediaInsights,
   getInstagramAccountInsights,
   getInstagramMediaComments,
+  getInstagramMediaActivity,
   postInstagramCommentReply,
   createInstagramContainer,
   createInstagramCarouselContainer,
@@ -108,6 +110,11 @@ export const instagramComposioProvider: PlatformProvider = {
   async fetchComments(contentExternalId: string, account: ProviderAccount): Promise<ProviderComment[]> {
     const { userId, connectedAccountId } = requireComposio(account);
     return getInstagramMediaComments(userId, connectedAccountId, contentExternalId);
+  },
+
+  async fetchCommentActivity(account: ProviderAccount, since: string): Promise<CommentActivityItem[]> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    return getInstagramMediaActivity(userId, connectedAccountId, since);
   },
 
   async postCommentReply(commentExternalId: string, message: string, account: ProviderAccount): Promise<string> {

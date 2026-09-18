@@ -1,5 +1,5 @@
 import { getComposioClient } from "./client";
-import type { ProviderContentItem, ProviderComment } from "@/lib/platforms/types";
+import type { ProviderContentItem, ProviderComment, CommentActivityItem } from "@/lib/platforms/types";
 
 /**
  * Instagram vía Composio — Fase 1 (proof of concept, solo lectura).
@@ -234,6 +234,61 @@ export async function getInstagramMediaComments(
       commentedAt: (c.timestamp as string) ?? undefined,
     };
   });
+}
+
+const ACTIVITY_PAGE_SIZE = 100;
+const ACTIVITY_MAX_PAGES = 3;
+
+/**
+ * Actividad de comentarios de todos los medios desde `sinceIso` — 1 llamada por cada
+ * 100 medios (no una por medio). Instagram no tiene updated_time: la señal es `comments_count`,
+ * que verificado en vivo INCLUYE las respuestas (un medio con 1 comentario + 2 respuestas
+ * reporta 3), así que un comentario nuevo o una respuesta de un cliente cambian el conteo.
+ * El sync lo compara contra el último conteo revisado (content.meta.comments_count_checked).
+ * Se pagina con el cursor `after` mientras haya `paging.next` y no se haya pasado de `since`.
+ */
+export async function getInstagramMediaActivity(
+  userId: string,
+  connectedAccountId: string,
+  sinceIso: string
+): Promise<CommentActivityItem[]> {
+  const composio = getComposioClient();
+  const sinceMs = new Date(sinceIso).getTime() - 60_000; // margen por si since es exclusivo
+  const out = new Map<string, CommentActivityItem>();
+  let after: string | undefined;
+
+  for (let page = 0; page < ACTIVITY_MAX_PAGES; page++) {
+    const args: Record<string, unknown> = {
+      ig_user_id: "me",
+      limit: ACTIVITY_PAGE_SIZE,
+      fields: "id,timestamp,comments_count",
+    };
+    if (after) args.after = after;
+
+    const result = await composio.tools.execute("INSTAGRAM_GET_IG_USER_MEDIA", {
+      userId,
+      connectedAccountId,
+      arguments: args,
+    });
+    if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_GET_IG_USER_MEDIA (actividad) falló");
+
+    const items = (result.data.data as Record<string, unknown>[] | undefined) ?? [];
+    let reachedSince = false;
+    for (const m of items) {
+      out.set(String(m.id), {
+        externalId: String(m.id),
+        commentCount: typeof m.comments_count === "number" ? m.comments_count : undefined,
+      });
+      const ts = new Date(m.timestamp as string).getTime();
+      if (!Number.isNaN(ts) && ts <= sinceMs) reachedSince = true;
+    }
+
+    const paging = result.data.paging as { next?: string; cursors?: { after?: string } } | undefined;
+    after = paging?.cursors?.after;
+    if (items.length === 0 || reachedSince || !paging?.next || !after) break;
+  }
+
+  return Array.from(out.values());
 }
 
 /**
