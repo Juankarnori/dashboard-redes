@@ -17,6 +17,13 @@ on:
     # cron solo son ~144 corridas/día — el costo real es N llamadas a
     # /api/sync por corrida, cada una barriendo el contenido de los
     # últimos COMMENTS_LOOKBACK_DAYS (14 días, ver comments-sync.ts).
+    # El mismo job también sincroniza los mensajes directos (scope=dms, ver
+    # lib/dms/sync.ts): no hay un cron aparte, se corren los dos scopes uno
+    # detrás del otro. Costo en Composio: 1 llamada de listado por cuenta
+    # con DMs por corrida (~144/día por cuenta) + 1 por hilo con novedad;
+    # los hilos sin cambios no se vuelven a pedir (checkpoint). Si el
+    # cupo mensual de Composio aprieta, el primer ajuste es sacar "dms"
+    # de este cron y darle uno propio más espaciado (ej. cada 30 min).
     # Si hace falta más rápido, 5 min es el siguiente escalón razonable;
     # bajar de ahí empieza a competir en serio con el resto del tier
     # gratis (500 min por corrida de otros jobs, límite de la cuenta).
@@ -24,7 +31,7 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: "all | stories | comments"
+        description: "all | stories | comments | dms (varios separados por espacio)"
         default: "all"
         required: false
 
@@ -42,7 +49,7 @@ jobs:
           if [ "${{ github.event.schedule }}" = "15 * * * *" ]; then
             echo "value=stories" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event.schedule }}" = "*/10 * * * *" ]; then
-            echo "value=comments" >> "$GITHUB_OUTPUT"
+            echo "value=comments dms" >> "$GITHUB_OUTPUT"
           elif [ -n "${{ github.event.inputs.scope }}" ]; then
             echo "value=${{ github.event.inputs.scope }}" >> "$GITHUB_OUTPUT"
           else

@@ -5,15 +5,17 @@ import { decryptToken } from "@/lib/crypto";
 import { resolveProviderForAccount } from "@/lib/platforms";
 import { recomputeAccountAlerts } from "@/lib/analytics/alerts";
 import { syncCommentsForAccount } from "@/lib/analytics/comments-sync";
+import { syncDmsForAccount } from "@/lib/dms/sync";
 import { refreshAccountTokenIfNeeded } from "@/lib/platforms/token-refresh";
 import { cacheRemoteThumbnail, isCachedThumbnailUrl } from "@/lib/supabase/storage";
 import type { ProviderContentItem } from "@/lib/platforms/types";
 
-type SyncScope = "all" | "stories" | "comments";
+type SyncScope = "all" | "stories" | "comments" | "dms";
 
 function parseScope(value: string | null): SyncScope {
   if (value === "stories") return "stories";
   if (value === "comments") return "comments";
+  if (value === "dms") return "dms";
   return "all";
 }
 
@@ -23,13 +25,16 @@ function parseScope(value: string | null): SyncScope {
  * importar cuántas cuentas haya en total. El GitHub Action itera sobre
  * /api/sync/accounts y llama esto una vez por cuenta.
  *
- * POST /api/sync?account_id=<uuid>&scope=all|stories|comments
+ * POST /api/sync?account_id=<uuid>&scope=all|stories|comments|dms
  *   scope=all (default): posts/reels + audiencia.
  *   scope=stories: solo historias activas (para el cron más frecuente).
  *   scope=comments: comentarios del contenido publicado recientemente
  *     (ver COMMENTS_LOOKBACK_DAYS en lib/analytics/comments-sync.ts) —
  *     pensado para un cron más frecuente que el de "all" pero no tan
  *     seguido como el de historias.
+ *   scope=dms: mensajes directos (Messenger + Instagram DM) — solo hilos
+ *     con novedad desde el último checkpoint (ver lib/dms/sync.ts). Las
+ *     cuentas sin DMs por API (TikTok, Instagram directo) devuelven 0.
  */
 export async function POST(request: NextRequest) {
   if (!isAuthorizedSyncRequest(request)) {
@@ -79,8 +84,11 @@ export async function POST(request: NextRequest) {
       account.id
     );
 
-    if (scope === "comments") {
-      const synced = await syncCommentsForAccount(supabase, provider, providerAccount, account.id);
+    if (scope === "comments" || scope === "dms") {
+      const synced =
+        scope === "comments"
+          ? await syncCommentsForAccount(supabase, provider, providerAccount, account.id)
+          : await syncDmsForAccount(supabase, provider, providerAccount, account.id);
       if (syncLog) {
         await supabase
           .from("sync_logs")
