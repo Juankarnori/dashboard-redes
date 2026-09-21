@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# carpeta de trabajo de Claude (borradores de prompts y capturas): solo local, no se publica
+Claude outputs/
