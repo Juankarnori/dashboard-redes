@@ -18,6 +18,11 @@ export type AlertType = "engagement_drop" | "no_posts_streak" | "content_spike" 
 export type AlertSeverity = "warning" | "info";
 export type CommentSentiment = "positive" | "negative" | "question" | "spam" | "lead" | "neutral";
 
+/** in = mensaje del cliente, out = del negocio. */
+export type DmDirection = "in" | "out";
+/** Mensaje sin texto: 'unsupported' = la red no expone su contenido por API. */
+export type DmMediaKind = "attachment" | "share" | "story" | "unsupported";
+
 export interface Database {
   public: {
     Tables: {
@@ -670,6 +675,94 @@ export interface Database {
             columns: ["account_id"];
             isOneToOne: false;
             referencedRelation: "accounts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      dm_conversations: {
+        Row: {
+          id: string;
+          account_id: string;
+          external_id: string;
+          participant_id: string;
+          participant_name: string | null;
+          network_updated_at: string | null;
+          last_message_at: string | null;
+          last_message_text: string | null;
+          last_message_media: DmMediaKind | null;
+          last_message_direction: DmDirection | null;
+          last_inbound_at: string | null;
+          can_reply: boolean | null;
+          unread_count: number | null;
+          link: string | null;
+          replied: boolean;
+          sentiment: CommentSentiment | null;
+          intent_score: number;
+          classified_at: string | null;
+          synced_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          external_id: string;
+          participant_id: string;
+          participant_name?: string | null;
+          network_updated_at?: string | null;
+          last_message_at?: string | null;
+          last_message_text?: string | null;
+          last_message_media?: DmMediaKind | null;
+          last_message_direction?: DmDirection | null;
+          last_inbound_at?: string | null;
+          can_reply?: boolean | null;
+          unread_count?: number | null;
+          link?: string | null;
+          replied?: boolean;
+          sentiment?: CommentSentiment | null;
+          intent_score?: number;
+          classified_at?: string | null;
+          synced_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["dm_conversations"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "dm_conversations_account_id_fkey";
+            columns: ["account_id"];
+            isOneToOne: false;
+            referencedRelation: "accounts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      dm_messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          external_id: string;
+          direction: DmDirection;
+          author_id: string | null;
+          body: string | null;
+          media_kind: DmMediaKind | null;
+          sent_at: string;
+          synced_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          external_id: string;
+          direction: DmDirection;
+          author_id?: string | null;
+          body?: string | null;
+          media_kind?: DmMediaKind | null;
+          sent_at: string;
+          synced_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["dm_messages"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "dm_messages_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "dm_conversations";
             referencedColumns: ["id"];
           },
         ];
