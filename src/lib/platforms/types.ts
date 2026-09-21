@@ -40,6 +40,18 @@ export interface PlatformProvider {
    */
   fetchCommentActivity?(account: ProviderAccount, since: string): Promise<CommentActivityItem[]>;
 
+  /**
+   * Mensajes directos (Messenger / Instagram DM): hilos de la cuenta, el más
+   * reciente primero. Solo los implementan los providers Composio — la
+   * integración directa no tiene DMs. `after` es el cursor de la página
+   * siguiente cuando la red lo soporta (Instagram sí; el tool de Facebook no
+   * expone cursor, se ve solo lo más reciente hasta `limit`).
+   */
+  fetchConversations?(account: ProviderAccount, opts?: { limit?: number; after?: string }): Promise<ConversationPage>;
+
+  /** Mensajes de un hilo, ORDENADOS del más viejo al más nuevo. Sin paginar: los más recientes hasta `limit`. */
+  fetchMessages?(conversationExternalId: string, account: ProviderAccount, opts?: { limit?: number }): Promise<ProviderMessage[]>;
+
   /** Publica una respuesta a un comentario. Devuelve el id del comentario de respuesta creado. */
   postCommentReply?(commentExternalId: string, message: string, account: ProviderAccount): Promise<string>;
 
@@ -95,6 +107,43 @@ export interface RefreshedToken {
   accessToken: string;
   refreshToken: string;
   expiresAt: string; // ISO
+}
+
+export interface ProviderConversation {
+  externalId: string;
+  /** PSID (Facebook) / IGSID (Instagram) del CLIENTE: es el `recipient_id` para responderle. */
+  participantId: string;
+  /** Facebook: nombre. Instagram: username (la API no da nombre). */
+  participantName?: string;
+  updatedAt?: string;
+  /** Solo Facebook. */
+  snippet?: string;
+  unreadCount?: number;
+  /** Solo Facebook: la red dice si la Página puede responder hoy. */
+  canReply?: boolean;
+  /** Solo Facebook: URL para abrir el hilo en la app/inbox de Meta. */
+  link?: string;
+}
+
+export interface ConversationPage {
+  conversations: ProviderConversation[];
+  nextCursor?: string;
+}
+
+/**
+ * Mensajes sin texto: la API devuelve `message` vacío y un campo aparte. `unsupported` = la
+ * red no expone su contenido por API (audios, algunos stickers/reels...), NO se puede leer.
+ */
+export type ProviderMessageMedia = "attachment" | "share" | "story" | "unsupported";
+
+export interface ProviderMessage {
+  externalId: string;
+  /** "out" = lo mandó el negocio; "in" = el cliente. */
+  direction: "in" | "out";
+  authorId?: string;
+  text: string;
+  media?: ProviderMessageMedia;
+  sentAt: string;
 }
 
 export interface CommentActivityItem {

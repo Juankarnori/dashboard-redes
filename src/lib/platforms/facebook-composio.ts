@@ -3,8 +3,10 @@ import type {
   ProviderAccount,
   ProviderAudienceSnapshot,
   CommentActivityItem,
+  ConversationPage,
   ProviderComment,
   ProviderContentItem,
+  ProviderMessage,
   PublishInput,
   PublishResult,
 } from "./types";
@@ -16,6 +18,8 @@ import {
   getFacebookPostViews,
   getFacebookComments,
   getFacebookCommentActivity,
+  getFacebookConversations,
+  getFacebookMessages,
   postFacebookCommentReply,
   createFacebookPhotoPost,
   createFacebookVideoPost,
@@ -99,6 +103,17 @@ export const facebookComposioProvider: PlatformProvider = {
     // vez de resolvePageId para no gastar una llamada más (LIST_MANAGED_PAGES)
     // en cada corrida del cron de comentarios.
     return getFacebookCommentActivity(userId, connectedAccountId, account.externalId, since);
+  },
+
+  // DMs (Messenger). account.externalId ES el page id, igual que en fetchCommentActivity.
+  async fetchConversations(account: ProviderAccount, opts?: { limit?: number }): Promise<ConversationPage> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    return { conversations: await getFacebookConversations(userId, connectedAccountId, account.externalId, opts?.limit) };
+  },
+
+  async fetchMessages(conversationExternalId: string, account: ProviderAccount, opts?: { limit?: number }): Promise<ProviderMessage[]> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    return getFacebookMessages(userId, connectedAccountId, account.externalId, conversationExternalId, opts?.limit);
   },
 
   async postCommentReply(commentExternalId: string, message: string, account: ProviderAccount): Promise<string> {

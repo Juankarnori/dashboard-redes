@@ -1,5 +1,11 @@
 import { getComposioClient } from "./client";
-import type { ProviderContentItem, ProviderComment, CommentActivityItem } from "@/lib/platforms/types";
+import type {
+  ProviderContentItem,
+  ProviderComment,
+  CommentActivityItem,
+  ConversationPage,
+  ProviderMessage,
+} from "@/lib/platforms/types";
 
 /**
  * Instagram vía Composio — Fase 1 (proof of concept, solo lectura).
@@ -234,6 +240,101 @@ export async function getInstagramMediaComments(
       commentedAt: (c.timestamp as string) ?? undefined,
     };
   });
+}
+
+const DM_PAGE_LIMIT = 25;
+
+/**
+ * Hilos de DM de la cuenta (INSTAGRAM_LIST_ALL_CONVERSATIONS), el más reciente primero.
+ * `businessId` = accounts.external_id (el id de la cuenta de IG): verificado en 5 hilos
+ * que es uno de los 2 `participants` y que `from.id` de los mensajes del negocio coincide
+ * con él. El OTRO participante es el cliente y su `id` (IGSID) es el `recipient_id` para
+ * responder; la API no da nombre, solo `username`.
+ *
+ * Paginación: esta lista NO trae `paging.next`, solo `paging.cursors.after` — y solo cuando
+ * hay más páginas (con limit 25 y 13 hilos no viene `paging`). Se usa `cursors.after`.
+ */
+export async function getInstagramConversations(
+  userId: string,
+  connectedAccountId: string,
+  businessId: string,
+  opts: { limit?: number; after?: string } = {}
+): Promise<ConversationPage> {
+  const limit = Math.min(opts.limit ?? DM_PAGE_LIMIT, DM_PAGE_LIMIT);
+  const composio = getComposioClient();
+  const args: Record<string, unknown> = { limit, platform: "instagram", fields: "id,updated_time,participants" };
+  if (opts.after) args.after = opts.after;
+
+  const result = await composio.tools.execute("INSTAGRAM_LIST_ALL_CONVERSATIONS", {
+    userId,
+    connectedAccountId,
+    arguments: args,
+  });
+  if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_LIST_ALL_CONVERSATIONS falló");
+
+  const conversations: ConversationPage["conversations"] = [];
+  for (const c of (result.data.data as Record<string, unknown>[] | undefined) ?? []) {
+    const participants = (c.participants as { data?: { id?: string; username?: string }[] } | undefined)?.data ?? [];
+    const customer = participants.find((p) => p.id && p.id !== businessId);
+    if (!customer?.id) continue;
+    conversations.push({
+      externalId: String(c.id),
+      participantId: customer.id,
+      participantName: customer.username,
+      updatedAt: c.updated_time as string | undefined,
+    });
+  }
+  const paging = result.data.paging as { cursors?: { after?: string } } | undefined;
+  return { conversations, nextCursor: paging?.cursors?.after };
+}
+
+/**
+ * Mensajes de un hilo (los `limit` más recientes), del más viejo al más nuevo. La mitad de
+ * los mensajes reales vienen con `message` vacío (22 de 44 en la muestra): la causa está en
+ * otro campo — `is_unsupported` (16: la API NO expone el contenido, p. ej. audios),
+ * `shares` (post/reel compartido), `story` (respuesta a una historia) o `attachments`.
+ */
+export async function getInstagramMessages(
+  userId: string,
+  connectedAccountId: string,
+  businessId: string,
+  conversationId: string,
+  limit = DM_PAGE_LIMIT
+): Promise<ProviderMessage[]> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("INSTAGRAM_LIST_ALL_MESSAGES", {
+    userId,
+    connectedAccountId,
+    arguments: {
+      conversation_id: conversationId,
+      limit: Math.min(limit, DM_PAGE_LIMIT),
+      fields: "id,created_time,from,to,message,attachments,shares,story,is_unsupported",
+    },
+  });
+  if (!result.successful) throw new Error(result.error ?? "INSTAGRAM_LIST_ALL_MESSAGES falló");
+
+  const hasData = (v: unknown) => Array.isArray((v as { data?: unknown[] } | undefined)?.data) && (v as { data: unknown[] }).data.length > 0;
+  const messages: ProviderMessage[] = [];
+  for (const m of (result.data.data as Record<string, unknown>[] | undefined) ?? []) {
+    const from = m.from as { id?: string } | undefined;
+    messages.push({
+      externalId: String(m.id),
+      direction: from?.id === businessId ? "out" : "in",
+      authorId: from?.id,
+      text: (m.message as string) ?? "",
+      media: m.is_unsupported
+        ? "unsupported"
+        : hasData(m.shares)
+          ? "share"
+          : m.story
+            ? "story"
+            : hasData(m.attachments)
+              ? "attachment"
+              : undefined,
+      sentAt: m.created_time as string,
+    });
+  }
+  return messages.sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
 }
 
 const ACTIVITY_PAGE_SIZE = 100;

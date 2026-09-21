@@ -36,6 +36,8 @@ export function mergeProviders(composio: PlatformProvider, direct: PlatformProvi
     fetchStories: composio.fetchStories ?? direct.fetchStories,
     fetchComments: composio.fetchComments ?? direct.fetchComments,
     fetchCommentActivity: composio.fetchCommentActivity ?? direct.fetchCommentActivity,
+    fetchConversations: composio.fetchConversations ?? direct.fetchConversations,
+    fetchMessages: composio.fetchMessages ?? direct.fetchMessages,
     postCommentReply: composio.postCommentReply ?? direct.postCommentReply,
     publishContent: composio.publishContent ?? direct.publishContent,
     checkPublishStatus: composio.checkPublishStatus ?? direct.checkPublishStatus,

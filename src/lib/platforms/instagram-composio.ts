@@ -2,9 +2,11 @@ import type {
   PlatformProvider,
   ProviderAccount,
   CommentActivityItem,
+  ConversationPage,
   ProviderAudienceSnapshot,
   ProviderComment,
   ProviderContentItem,
+  ProviderMessage,
   PublishInput,
   PublishResult,
 } from "./types";
@@ -15,6 +17,8 @@ import {
   getInstagramAccountInsights,
   getInstagramMediaComments,
   getInstagramMediaActivity,
+  getInstagramConversations,
+  getInstagramMessages,
   postInstagramCommentReply,
   createInstagramContainer,
   createInstagramCarouselContainer,
@@ -115,6 +119,17 @@ export const instagramComposioProvider: PlatformProvider = {
   async fetchCommentActivity(account: ProviderAccount, since: string): Promise<CommentActivityItem[]> {
     const { userId, connectedAccountId } = requireComposio(account);
     return getInstagramMediaActivity(userId, connectedAccountId, since);
+  },
+
+  // DMs de Instagram. account.externalId ES el id de la cuenta de IG (el "negocio" en los mensajes).
+  async fetchConversations(account: ProviderAccount, opts?: { limit?: number; after?: string }): Promise<ConversationPage> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    return getInstagramConversations(userId, connectedAccountId, account.externalId, opts);
+  },
+
+  async fetchMessages(conversationExternalId: string, account: ProviderAccount, opts?: { limit?: number }): Promise<ProviderMessage[]> {
+    const { userId, connectedAccountId } = requireComposio(account);
+    return getInstagramMessages(userId, connectedAccountId, account.externalId, conversationExternalId, opts?.limit);
   },
 
   async postCommentReply(commentExternalId: string, message: string, account: ProviderAccount): Promise<string> {

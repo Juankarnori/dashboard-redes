@@ -1,5 +1,11 @@
 import { getComposioClient } from "./client";
-import type { ProviderContentItem, ProviderComment, CommentActivityItem } from "@/lib/platforms/types";
+import type {
+  ProviderContentItem,
+  ProviderComment,
+  CommentActivityItem,
+  ProviderConversation,
+  ProviderMessage,
+} from "@/lib/platforms/types";
 
 /**
  * Facebook (Página) vía Composio — mismo patrón que instagram.ts: userId
@@ -182,6 +188,101 @@ export async function getFacebookPagePosts(
       },
     };
   });
+}
+
+/** Máximo que acepta el tool en `limit` (verificado: 50 devuelve 400 "less than or equal to 25"). */
+const DM_PAGE_LIMIT = 25;
+
+/**
+ * Hilos de Messenger de la Página, el más reciente primero (orden verificado en vivo).
+ * FACEBOOK_GET_PAGE_CONVERSATIONS no expone cursor: solo se ven los `limit` más
+ * recientes — alcanza porque un mensaje nuevo en un hilo viejo lo sube al tope.
+ *
+ * PII: el tool devuelve el EMAIL del cliente en `participants` aunque se pida solo
+ * `id,name` (la selección anidada se ignora, verificado). Se descarta acá mismo: nunca
+ * sale de esta función, así no puede llegar a la base ni a un log.
+ */
+export async function getFacebookConversations(
+  userId: string,
+  connectedAccountId: string,
+  pageId: string,
+  limit = DM_PAGE_LIMIT
+): Promise<ProviderConversation[]> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("FACEBOOK_GET_PAGE_CONVERSATIONS", {
+    userId,
+    connectedAccountId,
+    arguments: {
+      page_id: pageId,
+      limit: Math.min(limit, DM_PAGE_LIMIT),
+      fields: "id,updated_time,participants,snippet,unread_count,can_reply,link",
+    },
+  });
+  if (!result.successful) throw new Error(result.error ?? "FACEBOOK_GET_PAGE_CONVERSATIONS falló");
+
+  const out: ProviderConversation[] = [];
+  for (const c of (result.data.data as Record<string, unknown>[] | undefined) ?? []) {
+    const participants = (c.participants as { data?: { id?: string; name?: string }[] } | undefined)?.data ?? [];
+    const customer = participants.find((p) => p.id && p.id !== pageId);
+    if (!customer?.id) continue; // sin cliente identificable no hay a quién responder
+    const link = c.link as string | undefined;
+    out.push({
+      externalId: String(c.id),
+      participantId: customer.id,
+      participantName: customer.name,
+      updatedAt: c.updated_time as string | undefined,
+      snippet: c.snippet as string | undefined,
+      unreadCount: typeof c.unread_count === "number" ? c.unread_count : undefined,
+      canReply: typeof c.can_reply === "boolean" ? c.can_reply : undefined,
+      // `link` viene relativo ("/{page}/inbox/...").
+      link: link ? (link.startsWith("/") ? `https://www.facebook.com${link}` : link) : undefined,
+    });
+  }
+  return out;
+}
+
+/**
+ * Mensajes de un hilo (los `limit` más recientes), del más viejo al más nuevo. Dirección:
+ * `from.id` = la Página → "out", cualquier otro → "in" (el cliente). Igual que arriba, el
+ * email de `from` no se copia. Los mensajes con adjunto/sticker/compartido traen `message`
+ * vacío: se marca `media` (la forma exacta de `attachments` de FB no se pudo observar —
+ * los hilos reales de hoy son solo texto — así que se detecta por presencia, sin leer
+ * el contenido).
+ */
+export async function getFacebookMessages(
+  userId: string,
+  connectedAccountId: string,
+  pageId: string,
+  conversationId: string,
+  limit = DM_PAGE_LIMIT
+): Promise<ProviderMessage[]> {
+  const composio = getComposioClient();
+  const result = await composio.tools.execute("FACEBOOK_GET_CONVERSATION_MESSAGES", {
+    userId,
+    connectedAccountId,
+    arguments: {
+      page_id: pageId,
+      conversation_id: conversationId,
+      limit: Math.min(limit, DM_PAGE_LIMIT),
+      fields: "id,created_time,from,message,attachments,sticker,shares",
+    },
+  });
+  if (!result.successful) throw new Error(result.error ?? "FACEBOOK_GET_CONVERSATION_MESSAGES falló");
+
+  const hasData = (v: unknown) => Array.isArray((v as { data?: unknown[] } | undefined)?.data) && (v as { data: unknown[] }).data.length > 0;
+  const messages: ProviderMessage[] = [];
+  for (const m of (result.data.data as Record<string, unknown>[] | undefined) ?? []) {
+    const from = m.from as { id?: string } | undefined;
+    messages.push({
+      externalId: String(m.id),
+      direction: from?.id === pageId ? "out" : "in",
+      authorId: from?.id,
+      text: (m.message as string) ?? "",
+      media: hasData(m.shares) ? "share" : hasData(m.attachments) || m.sticker ? "attachment" : undefined,
+      sentAt: m.created_time as string,
+    });
+  }
+  return messages.sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
 }
 
 const ACTIVITY_PAGE_SIZE = 100;
