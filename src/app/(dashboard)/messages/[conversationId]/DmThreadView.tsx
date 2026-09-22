@@ -4,6 +4,7 @@ import { dmOpenInAppUrl, DM_NETWORK_LABELS } from "@/lib/dms/links";
 import type { DmThread } from "@/lib/dms/queries";
 import { DmWindowBanner } from "./DmWindowBanner";
 import { DmMessageBubble } from "./DmMessageBubble";
+import { DmComposer } from "./DmComposer";
 
 function dayLabel(iso: string): string {
   const label = new Date(iso).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "long" });
@@ -49,20 +50,21 @@ export function DmThreadView({ thread, now = new Date() }: { thread: DmThread; n
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[--radius-card] border border-dashed border-border bg-surface-1 px-4 py-3 text-xs text-ink-600">
-        <p>Por ahora esta bandeja es de solo lectura: para responder, abrí el chat en {networkLabel}.</p>
-        {openInAppUrl && (
+      {openInAppUrl && (
+        <div className="flex justify-end">
           <a
             href={openInAppUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 font-medium text-accent hover:underline"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline"
           >
             Abrir en {networkLabel}
             <ExternalLink aria-hidden size={13} />
           </a>
-        )}
-      </div>
+        </div>
+      )}
+
+      <DmComposer conversationId={conversation.id} networkLabel={networkLabel} />
     </div>
   );
 }

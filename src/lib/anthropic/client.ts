@@ -226,6 +226,48 @@ sin comillas. Respondé ÚNICAMENTE con el texto de la respuesta, nada más.`,
   return text;
 }
 
+/**
+ * Borrador de respuesta a un mensaje directo (Messenger/Instagram) — SIEMPRE queda como
+ * borrador editable en la UI (ver DmComposer.tsx), nunca se envía sola. A diferencia de un
+ * comentario público, acá hay contexto de ida y vuelta: `transcript` es el historial del
+ * hilo (ver buildDmTranscript), no un solo mensaje suelto, para que la sugerencia continúe
+ * la conversación en vez de repetir un saludo inicial.
+ */
+export async function generateDmReplySuggestion(brandName: string, transcript: string, styleExample: string): Promise<string> {
+  const client = getClient();
+
+  const message = await client.messages.create({
+    model: MODEL,
+    max_tokens: 300,
+    messages: [
+      {
+        role: "user",
+        content: `Sos quien responde los mensajes directos (Facebook Messenger / Instagram) del negocio "${brandName}".
+
+Este es el historial de la conversación con un cliente, del más viejo al más nuevo:
+${transcript}
+
+Este es un ejemplo real del tono/estilo que ya usa el negocio para responder:
+"${styleExample}"
+
+Escribí UNA respuesta corta (máx. 2-3 frases, menos de 250 caracteres), cálida y natural
+en español, que continúe la conversación respondiendo a lo último que escribió el
+cliente. Sin hashtags, sin firmarlo, sin comillas. Respondé ÚNICAMENTE con el texto de
+la respuesta, nada más.`,
+      },
+    ],
+  });
+
+  const text = message.content
+    .filter((block): block is Anthropic.TextBlock => block.type === "text")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+
+  if (!text) throw new Error("Claude no devolvió una sugerencia.");
+  return text;
+}
+
 export interface TrendResult {
   topic: string;
   summary: string;
