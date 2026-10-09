@@ -388,7 +388,12 @@ export async function getFacebookComments(
       fields: "id,message,created_time,from,like_count,comments{id,message,created_time,from,like_count}",
     },
   });
-  if (!result.successful) return []; // posts sin comentarios habilitados, etc. — no fatal, ver el directo
+  if (!result.successful) {
+    // No fatal (posts sin comentarios habilitados, etc.) pero NO silencioso: si Composio
+    // empieza a fallar de verdad, acá se ve en los logs de Vercel en vez de parecer "0 comentarios".
+    console.error(`[facebook] FACEBOOK_GET_COMMENTS falló para ${objectId}:`, result.error ?? "sin detalle");
+    return [];
+  }
 
   const flat: ProviderComment[] = [];
   const topLevel = (result.data.data as Record<string, unknown>[] | undefined) ?? [];

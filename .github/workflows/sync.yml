@@ -95,12 +95,16 @@ jobs:
 
       - name: Sincronizar cada cuenta (una llamada por cuenta)
         run: |
-          scope="${{ steps.scope.outputs.value }}"
+          # `scopes` puede traer varios scopes separados por espacio (ej. "comments dms"):
+          # se hace UNA llamada por scope — la ruta acepta un solo valor por request.
+          scopes="${{ steps.scope.outputs.value }}"
           while read -r id; do
             id=$(echo "$id" | tr -d '"')
-            echo "Sync $id (scope=$scope)"
-            curl -sf -X POST \
-              -H "Authorization: Bearer $SYNC_CRON_SECRET" \
-              "$APP_URL/api/sync?account_id=$id&scope=$scope" \
-              || echo "::warning::Falló el sync de $id"
+            for scope in $scopes; do
+              echo "Sync $id (scope=$scope)"
+              curl -sf -X POST \
+                -H "Authorization: Bearer $SYNC_CRON_SECRET" \
+                "$APP_URL/api/sync?account_id=$id&scope=$scope" \
+                || echo "::warning::Falló el sync de $id (scope=$scope)"
+            done
           done < account_ids.txt
